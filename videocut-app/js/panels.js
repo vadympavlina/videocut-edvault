@@ -7,7 +7,7 @@ import { seek } from './player.js';
 import { parseSubtitles } from './srt.js';
 import { renderCapTab, markActiveCaption, capTabClick, capTabInput, capTabChange, capTabToggle, captionInspector, ccAction, speedHtml } from './cc-panel.js';
 import { KEY_DEFAULT } from './chroma.js';
-import { isLayer, LAYOUTS, layoutOf, applyLayout, cropSides, setCropSide, setScale, setShape, resetCrop } from './layer.js';
+import { isLayer, BLENDS, blendOf, LAYOUTS, layoutOf, applyLayout, cropSides, setCropSide, setScale, setShape, resetCrop } from './layer.js';
 import { $, esc, icon, fmt, fmtShort, parseTime, toast, confirmDialog, fmtBytes, balanceSegs, keepFocus, typingIn, setHtml } from './ui.js';
 
 const COLORS = ['#ffffff', '#1a1d23', '#ef4444', '#f59e0b', '#ffd43b', '#10b981', '#0ea5e9', '#4F6BF4', '#8b5cf6', '#ec4899'];
@@ -394,7 +394,8 @@ function layerPanel(o) {
       <div class="crop-grid">${cropR('l', 'Зліва')}${cropR('r', 'Справа')}${cropR('t', 'Зверху')}${cropR('b', 'Знизу')}</div>
       ${cropped ? `<button class="btn btn-sm btn-outline btn-block" data-a="resetCrop">${icon('undo')}Без обрізки</button>` : ''}
     </div></details>
-    <div class="field" style="margin-top:12px"><label>Непрозорість<span class="aux" data-show="opacity">${Math.round((o.opacity ?? 1) * 100)}%</span></label><input type="range" data-f="opacity" data-pct="1" min="0.1" max="1" step="0.01" value="${o.opacity ?? 1}"></div>
+    <div class="field" style="margin-top:12px"><label>Режим накладання</label><div class="seg">${Object.entries(BLENDS).map(([k, n]) => `<button data-set="blend" data-v="${k}" class="${(o.blend || 'normal') === k ? 'on' : ''}">${n}</button>`).join('')}</div>${blendOf(o) ? `<p class="hint">${o.blend === 'screen' || o.blend === 'lighter' ? 'Чорне на футажі зникає, світле лишається: для вогню, іскор, боке, частинок.' : 'Біле на футажі зникає, темне лишається: для тіней, диму, плям.'}</p>` : ''}</div>
+    <div class="field"><label>Непрозорість<span class="aux" data-show="opacity">${Math.round((o.opacity ?? 1) * 100)}%</span></label><input type="range" data-f="opacity" data-pct="1" min="0.1" max="1" step="0.01" value="${o.opacity ?? 1}"></div>
     <div class="field"><label>Рамка</label>${swatches(o.border && o.border !== 'none' ? o.border : '', 'border')}<button class="chip${!o.border || o.border === 'none' ? ' on' : ''}" data-a="noBorder" style="margin-top:6px">${icon('x')}Без рамки</button></div>
     <div class="chips">${video ? chip('shadow', 'Тінь', !!o.shadow, 'true', 'sparkle') : ''}${chip('flip', 'Дзеркально', !!o.flip, 'true', 'flipH')}</div>`) +
     keySection(o) +
@@ -602,6 +603,11 @@ function onClick(e) {
       return;
     }
     if (isLayer(o) && f === 'shape') { setShape(o, v); commit(); return; }
+    if (isLayer(o) && f === 'blend') {
+      o.blend = v;
+      if (v !== 'normal') { if (o.type === 'video' && (!o.shape || o.shape === 'circle')) o.shape = 'rect'; o.shadow = false; o.border = 'none'; } // тінь, коло й рамка заважають
+      commit(); renderInspector(); return;
+    }
     o[f] = v;
     if (o.type === 'progress' && f === 'h' && o.y > 0.5) o.y = 1 - v;
     commit(); return;

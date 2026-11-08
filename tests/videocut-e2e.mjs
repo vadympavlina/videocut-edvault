@@ -14,7 +14,8 @@ const tmp = await mkdtemp(join(tmpdir(), 'vc-'));
 const video = join(tmp, 'v.webm'), audio = join(tmp, 'a.webm');
 const ff = (...a) => execFileSync(process.env.FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', ...a]);
 ff('-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=30:duration=12', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=12', '-c:v', 'libvpx', '-b:v', '800k', '-c:a', 'libopus', '-shortest', video);
-const green = join(tmp, 'g.webm');
+const green = join(tmp, 'g.webm'), fx = join(tmp, 'fx.webm');
+ff('-f', 'lavfi', '-i', 'color=c=black:s=640x360:r=30:d=4,drawbox=x=100:y=80:w=120:h=120:color=white:t=fill,drawbox=x=400:y=200:w=100:h=100:color=0xffd000:t=fill', '-c:v', 'libvpx', '-b:v', '600k', fx);
 ff('-f', 'lavfi', '-i', 'color=c=0x00b140:s=640x360:r=30:d=4,drawbox=x=100:y=80:w=120:h=200:color=0xe0ac86:t=fill,drawbox=x=300:y=80:w=100:h=100:color=0xd02020:t=fill,drawbox=x=450:y=0:w=100:h=360:color=0x00551f:t=fill', '-c:v', 'libvpx', '-b:v', '600k', green);
 ff('-f', 'lavfi', '-i', 'sine=frequency=300:duration=6', '-c:a', 'libopus', audio);
 
@@ -252,6 +253,26 @@ await step('хромакей: накладання з вимкненим фон�
   assert.ok(skin[0] > 190 && skin[1] > 140 && skin[2] > 100 && skin[0] > skin[2] + 40, 'шкіра лишилась: ' + skin);
   assert.ok(red[0] > 160 && red[1] < 90, 'червоне лишилось: ' + red);
   assert.ok(!(bgPix[1] > bgPix[0] + 60 && bgPix[1] > bgPix[2] + 40 && bgPix[1] > 140), 'зеленого фону більше немає: ' + bgPix);
+});
+
+await step('режими накладання: «Світло» прибирає чорне тло футажа, світлі плями лишаються', async () => {
+  await page.evaluate(() => { document.getElementById('fileInput').dataset.target = 'layer'; });
+  const before = await page.evaluate(() => window.VideoCut.S.project.overlays.length);
+  await page.setInputFiles('#fileInput', fx);
+  await page.waitForFunction(n => window.VideoCut?.S.project.overlays.length > n, before, { timeout: 20000 });
+  await page.waitForTimeout(800);
+  const px = async (fx_, fy) => page.evaluate(([fx_, fy]) => { const c = document.getElementById('pv'), g = c.getContext('2d'); const d = g.getImageData(Math.round(fx_ * c.width), Math.round(fy * c.height), 1, 1).data; return [d[0], d[1], d[2]]; }, [fx_, fy]);
+  const setup = (patch) => page.evaluate(patch => { const V = window.VideoCut, ovs = V.S.project.overlays; ovs.forEach(o => { o.start = 10; }); const o = ovs.at(-1); Object.assign(o, { x: 0, y: 0, w: 1, h: 1, shape: 'rect', start: 0, dur: 4, crop: { x: 0, y: 0, w: 1, h: 1 }, key: { on: false } }, patch); V.commit(); V.seek(1); }, patch);
+  await page.evaluate(() => { const V = window.VideoCut; V.S.project.overlays.forEach(o => { o.start = 10; }); V.commit(); V.seek(1); }); await page.waitForTimeout(500);
+  const main = await px(0.8, 0.8), mainWhite = await px(160 / 640, 140 / 360);
+  await setup({ blend: 'normal' }); await page.waitForTimeout(500);
+  const normal = await px(0.8, 0.8);
+  assert.ok(normal[0] < 40 && normal[1] < 40 && normal[2] < 40, 'без режиму чорне тло закриває відео: ' + normal);
+  await setup({ blend: 'screen' }); await page.waitForTimeout(500);
+  const scr = await px(0.8, 0.8), white = await px(160 / 640, 140 / 360), yellow = await px(450 / 640, 250 / 360);
+  assert.ok(Math.abs(scr[0] - main[0]) < 30 && Math.abs(scr[1] - main[1]) < 30 && Math.abs(scr[2] - main[2]) < 30, `«Світло»: видно відео під чорним (${scr} проти ${main})`);
+  assert.ok(white[0] > 230 && white[1] > 230 && white[2] > 230, 'біла пляма лишилась білою: ' + white);
+  assert.ok(yellow[0] > 200 && yellow[1] > 150, 'жовта пляма видна: ' + yellow);
 });
 
 await step('хромакей: експорт із накладанням без фону проходить і дає файл', async () => {

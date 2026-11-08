@@ -3,6 +3,9 @@
 import { S, media, outputSize } from './state.js';
 import { keyOf, keyFrame } from './chroma.js';
 
+// режими накладання: футажі на чорному тлі (вогонь, іскри, боке) кладуться «Світлом», і чорне зникає
+export const BLENDS = { normal: 'Звичайний', screen: 'Світло', lighter: 'Додавання', multiply: 'Затемнення' };
+export const blendOf = o => (o && o.blend && BLENDS[o.blend] && o.blend !== 'normal' ? o.blend : null);
 export const isLayer = o => !!o && (o.type === 'video' || o.type === 'image');
 const FULL = { x: 0, y: 0, w: 1, h: 1 };
 export const cropOf = o => o.crop || FULL;
@@ -174,10 +177,11 @@ export function drawLayer(ctx, o, f, W, H, k, editing = false) {
     else if (rad > 0) rrect(ctx, bx, by, bw, bh, rad);
     else ctx.rect(bx, by, bw, bh);
   };
+  const K = keyOf(o), BM = blendOf(o);
   ctx.save();
   ctx.globalAlpha *= o.opacity ?? 1;
-  const K = keyOf(o);
-  if (video && !K) {
+  if (BM) ctx.globalCompositeOperation = BM;
+  if (video && !K && !BM) {
     ctx.save();
     if (o.shadow !== false) { ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 24 * k; ctx.shadowOffsetY = 6 * k; }
     path(); ctx.fillStyle = '#111'; ctx.fill();

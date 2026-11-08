@@ -4,7 +4,7 @@
 // Колір порівнюємо за «хроматичністю» (частка кожного каналу в сумі), а не за яскравістю:
 // так тінь і світла пляма на тому самому зеленому зникають однаково, а шкіра, червоне й синє лишаються.
 
-export const KEY_DEFAULT = { on: false, color: '#00b140', tol: 0.22, soft: 0.14, spill: 0.6 };
+export const KEY_DEFAULT = { on: false, color: '#00b140', tol: 0.18, soft: 0.1, spill: 0.6 };
 export const keyOf = o => (o && o.key && o.key.on ? { ...KEY_DEFAULT, ...o.key } : null);
 
 export const hexToRgb = h => {

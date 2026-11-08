@@ -62,14 +62,49 @@ function setVolume(el, v) {
   else el.volume = Math.max(0, Math.min(1, v));
 }
 
+// ── кадр без мерехтіння при перемотуванні ──
+// Поки відеоелемент шукає новий кадр, він віддає порожнє місце або застарілий кадр. Тому в паузі ми запам'ятовуємо
+// останній повний кадр кожного елемента й показуємо його, доки пошук не закінчиться.
+const heldFrames = new WeakMap(); // відеоелемент → { cv, src }
+function frameOf(v, w, h) {
+  const ready = v.readyState >= 2 && !v.seeking;
+  if (ready) {
+    if (!S.playing && w && h) { // у паузі зберігаємо повний кадр (до 1280 пікселів) на випадок наступної перемотки
+      let hd = heldFrames.get(v);
+      const k = Math.min(1, 1280 / Math.max(w, h)), cw = Math.max(1, Math.round(w * k)), ch = Math.max(1, Math.round(h * k));
+      if (!hd) { hd = { cv: document.createElement('canvas'), src: '' }; heldFrames.set(v, hd); }
+      if (hd.cv.width !== cw || hd.cv.height !== ch) { hd.cv.width = cw; hd.cv.height = ch; }
+      try { hd.cv.getContext('2d').drawImage(v, 0, 0, cw, ch); hd.src = v.currentSrc; } catch (e) { /* кадр ще не готовий */ }
+    }
+    return { src: v, w, h };
+  }
+  const hd = heldFrames.get(v);
+  if (hd && hd.src === v.currentSrc && !S.playing) return { src: hd.cv, w, h };
+  return v.readyState >= 2 && S.playing ? { src: v, w, h } : null;
+}
+// Запити на перемотку не скасовують один одного: поки йде пошук, запам'ятовуємо лише останню ціль
+const wantTime = new WeakMap(), seekHooked = new WeakSet();
+function seekEl(v, t) {
+  if (!seekHooked.has(v)) {
+    seekHooked.add(v);
+    v.addEventListener('seeked', () => {
+      const w = wantTime.get(v);
+      if (w != null) { wantTime.delete(v); if (Math.abs(v.currentTime - w) > 0.02) { v.currentTime = w; return; } }
+      if (!S.playing) { requestDraw(); syncPaused(); }
+    });
+  }
+  if (v.seeking) { wantTime.set(v, t); return; }
+  wantTime.delete(v);
+  v.currentTime = t;
+}
+
 // джерело кадру для перегляду — відеоелемент або зображення
 function previewProvider(l) {
   const m = media.get(l.clip.mediaId);
   if (!m || !m.el) return null;
   if (m.kind === 'image') return { src: m.el, w: m.width, h: m.height };
   const v = m.el;
-  if (v.readyState < 2) return null;
-  return { src: v, w: v.videoWidth || m.width, h: v.videoHeight || m.height };
+  return frameOf(v, v.videoWidth || m.width, v.videoHeight || m.height);
 }
 
 let drawQueued = false;
@@ -100,8 +135,8 @@ function cleanupOvEls() {
 }
 function ovProvider(o, st) {
   const v = ovEl(o);
-  if (!v || v.readyState < 2) return null;
-  return { src: v, w: v.videoWidth, h: v.videoHeight };
+  if (!v) return null;
+  return frameOf(v, v.videoWidth, v.videoHeight);
 }
 // кадр накладання зараз (для піпетки й автоматичного пошуку кольору фону)
 export function ovFrameNow(o) {
@@ -130,10 +165,7 @@ function syncPausedOv() {
   for (const o of activeOv(S.t)) {
     const v = ovEl(o); if (!v) continue;
     const st = (o.in || 0) + (S.t - o.start);
-    if (Math.abs(v.currentTime - st) > 0.03) {
-      v.addEventListener('seeked', () => { if (!S.playing) requestDraw(); }, { once: true });
-      v.currentTime = st;
-    }
+    if (Math.abs(v.currentTime - st) > 0.03) seekEl(v, st);
   }
 }
 function syncPaused() {
@@ -144,13 +176,7 @@ function syncPaused() {
   const m = media.get(l.clip.mediaId);
   if (!m || m.kind !== 'video') return;
   const v = m.el, st = srcTime(l, S.t);
-  if (Math.abs(v.currentTime - st) > 0.02 || v.readyState < 2) {
-    if (!seekPending.has(v)) {
-      seekPending.add(v);
-      v.addEventListener('seeked', () => { seekPending.delete(v); requestDraw(); if (!S.playing) syncPaused(); }, { once: true });
-    }
-    v.currentTime = st;
-  }
+  if (Math.abs(v.currentTime - st) > 0.02 || v.readyState < 2) seekEl(v, st);
 }
 
 // ── відтворення ──

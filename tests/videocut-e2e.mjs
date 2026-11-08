@@ -14,7 +14,8 @@ const tmp = await mkdtemp(join(tmpdir(), 'vc-'));
 const video = join(tmp, 'v.webm'), audio = join(tmp, 'a.webm');
 const ff = (...a) => execFileSync(process.env.FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', ...a]);
 ff('-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=30:duration=12', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=12', '-c:v', 'libvpx', '-b:v', '800k', '-c:a', 'libopus', '-shortest', video);
-const green = join(tmp, 'g.webm'), fx = join(tmp, 'fx.webm');
+const green = join(tmp, 'g.webm'), fx = join(tmp, 'fx.webm'), ramp = join(tmp, 'r.webm');
+ff('-f', 'lavfi', '-i', "color=c=gray:s=640x360:r=30:d=6,geq=lum='clip(255*T/6,0,255)':cb=128:cr=128", '-c:v', 'libvpx', '-g', '30', '-b:v', '900k', ramp);
 ff('-f', 'lavfi', '-i', 'color=c=black:s=640x360:r=30:d=4,drawbox=x=100:y=80:w=120:h=120:color=white:t=fill,drawbox=x=400:y=200:w=100:h=100:color=0xffd000:t=fill', '-c:v', 'libvpx', '-b:v', '600k', fx);
 ff('-f', 'lavfi', '-i', 'color=c=0x00b140:s=640x360:r=30:d=4,drawbox=x=100:y=80:w=120:h=200:color=0xe0ac86:t=fill,drawbox=x=300:y=80:w=100:h=100:color=0xd02020:t=fill,drawbox=x=450:y=0:w=100:h=360:color=0x00551f:t=fill', '-c:v', 'libvpx', '-b:v', '600k', green);
 ff('-f', 'lavfi', '-i', 'sine=frequency=300:duration=6', '-c:a', 'libopus', audio);
@@ -311,6 +312,45 @@ await step('хромакей: експорт із накладанням без 
     return b && b.size ? b.size : 0;
   });
   assert.ok(size > 1000, 'файл експорту не порожній: ' + size);
+});
+
+await step('перемотування: кадр не мерехтить і не стрибає назад (основне відео й накладання)', async () => {
+  const p2 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  await p2.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p2.goto(`http://localhost:${port}/index.html`);
+  await p2.setInputFiles('#fileInput', ramp);
+  await p2.waitForFunction(() => window.VideoCut?.S.project.clips.length > 0, null, { timeout: 20000 });
+  await p2.evaluate(() => { document.getElementById('fileInput').dataset.target = 'layer'; });
+  await p2.setInputFiles('#fileInput', ramp);
+  await p2.waitForFunction(() => window.VideoCut.S.project.overlays.length > 0, null, { timeout: 20000 });
+  await p2.waitForTimeout(1200);
+  await p2.evaluate(() => { const V = window.VideoCut, o = V.S.project.overlays.at(-1); Object.assign(o, { x: 0.5, y: 0, w: 0.5, h: 1, shape: 'rect', start: 0, dur: 6, crop: { x: 0.5, y: 0, w: 0.5, h: 1 }, shadow: false }); V.commit(); V.seek(0.1); });
+  await p2.waitForTimeout(600);
+  const scrub = key => p2.evaluate(async key => {
+    const V = window.VideoCut, c = document.getElementById('pv'), g = c.getContext('2d', { willReadFrequently: true });
+    V.S.project.overlays.at(-1).key = key ? { on: true, color: '#00b140', tol: 0.18, soft: 0.1, spill: 0.6, clean: 0.1, choke: 0 } : { on: false }; V.commit(); V.seek(0.1);
+    await new Promise(r => setTimeout(r, 500));
+    const gray = fx => { const d = g.getImageData(Math.round(fx * c.width), Math.round(0.5 * c.height), 1, 1).data; return d[0]; };
+    const raf = () => new Promise(r => requestAnimationFrame(r));
+    const log = [];
+    // «повзунок» ходить уперед і назад, як рука
+    const path = []; for (let i = 0; i < 80; i++) path.push(0.3 + i * 0.06); for (let i = 0; i < 40; i++) path.push(5.1 - i * 0.07);
+    for (const t of path) { V.seek(t); await raf(); await raf(); log.push({ t, l: gray(0.25), r: gray(0.75) }); }
+    return log;
+  }, key);
+  for (const key of [false, true]) {
+    const r = await scrub(key), bad = [];
+    r.forEach((x, i) => {
+      for (const side of ['l', 'r']) {
+        const want = 255 * x.t / 6;
+        if (x[side] < 6 && x.t > 0.5) bad.push(`${i}: ${side} порожньо при t=${x.t.toFixed(2)}`);
+        if (Math.abs(x[side] - want) > 60) bad.push(`${i}: ${side} стрибок ${x[side]} замість ~${Math.round(want)}`);
+      }
+    });
+    console.log(`     перемотування${key ? ' з хромакеєм' : ''}: збоїв ${bad.length} з ${r.length * 2} кадрів`);
+    assert.ok(bad.length <= 3, `мерехтіння/стрибки${key ? ' (з хромакеєм)' : ''} у ${bad.length} кадрах з ${r.length * 2}: ` + bad.slice(0, 6).join('; '));
+  }
+  await p2.close();
 });
 
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));

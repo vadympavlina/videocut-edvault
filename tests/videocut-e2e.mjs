@@ -191,6 +191,22 @@ await step('контекстне меню таймлайну розрізає к
   assert.ok(await VC(() => window.VideoCut.S.t) > 0, 'курсор має перейти до наступної точки');
 });
 
+await step('файл від сторінки, що відкрила редактор (запис екрана), приймається повідомленням', async () => {
+  const b64 = (await readFile(video)).toString('base64');
+  const popup = page.waitForEvent('popup');
+  await page.evaluate(async b64 => {
+    // сторінка-відкривач: чекає на «готово» від редактора й відповідає файлом
+    const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: 'video/webm' });
+    const w = window.open('/index.html?import=recording', '_blank');
+    addEventListener('message', e => { if (e.source === w && e.data && e.data.type === 'videocut:ready') w.postMessage({ type: 'videocut:file', blob, name: 'запис.webm' }, e.origin); });
+  }, b64);
+  const p2 = await popup;
+  await p2.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p2.waitForFunction(() => window.VideoCut?.S.project.clips.length > 0, null, { timeout: 20000 });
+  assert.equal(await p2.evaluate(() => location.search), '', 'адресу очищено');
+  await p2.close();
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

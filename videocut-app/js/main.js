@@ -377,12 +377,30 @@ async function openProjectFile(file) {
 }
 $('projInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) openProjectFile(f); });
 
+// Файл від сторінки, яка відкрила редактор (інший піддомен: спільного сховища немає, тому передаємо повідомленням).
+// Приймаємо лише від відкривача з довіреної адреси; сторінка-відправник слухає наше «готово» і відповідає файлом.
+const TRUSTED = ['https://tools.edvault.online', location.origin];
+function receiveFromOpener(timeout = 20000) {
+  return new Promise(resolve => {
+    const done = v => { clearTimeout(timer); removeEventListener('message', on); resolve(v); };
+    const on = e => {
+      if (e.source !== window.opener || !TRUSTED.includes(e.origin)) return;
+      const d = e.data;
+      if (d && d.type === 'videocut:file' && d.blob instanceof Blob) done({ blob: d.blob, name: String(d.name || '') });
+    };
+    const timer = setTimeout(() => done(null), timeout);
+    addEventListener('message', on);
+    for (const o of new Set(TRUSTED)) { try { window.opener.postMessage({ type: 'videocut:ready' }, o); } catch (e) { /* інша адреса */ } }
+  });
+}
+
 // файл, переданий з іншого інструмента (наприклад, «Запис екрану»)
 async function takeHandoffIfAny() {
   const params = new URLSearchParams(location.search);
   if (!params.has('import')) return;
   history.replaceState(null, '', location.pathname);
-  const item = await takeHandoff(params.get('import'));
+  let item = await takeHandoff(params.get('import'));
+  if (!item && window.opener) item = await receiveFromOpener();
   if (!item || !item.blob) { toast('Не знайшли переданий файл — додайте його вручну', 'err'); return; }
   try {
     const m = await addMedia(item.blob, item.name || 'запис-екрану.webm');

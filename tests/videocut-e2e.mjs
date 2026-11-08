@@ -428,6 +428,64 @@ await step('розрізаний кліп: обидві половини діл�
   assert.equal(bad.length, 0, bad.join('; '));
 });
 
+await step('відтворення через розріз (вирізаний шматок): без чорних кадрів і зависань на межі', async () => {
+  const p5 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  await p5.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p5.goto(`http://localhost:${port}/index.html`);
+  await p5.setInputFiles('#fileInput', ramp);
+  await p5.waitForFunction(() => window.VideoCut?.S.project.clips.length > 0, null, { timeout: 20000 });
+  await p5.waitForTimeout(1200);
+  await p5.evaluate(() => { const V = window.VideoCut; V.S.sel = { kind: 'clip', id: V.S.project.clips[0].id }; V.seek(2); });
+  await p5.keyboard.press('s'); await p5.waitForTimeout(200);
+  await p5.evaluate(() => window.VideoCut.seek(4)); await p5.keyboard.press('s'); await p5.waitForTimeout(200);
+  const mid = await p5.evaluate(() => window.VideoCut.layout()[1].clip.id);
+  await p5.evaluate(id => { window.VideoCut.S.sel = { kind: 'clip', id }; }, mid);
+  await p5.keyboard.press('Delete'); await p5.waitForTimeout(500);
+  const lay = await p5.evaluate(() => window.VideoCut.layout().map(l => [l.start, l.end, l.clip.in || 0]));
+  assert.equal(lay.length, 2, 'після видалення середини лишилось два кліпи');
+  assert.ok(Math.abs(lay[1][2] - 4) < 0.05, 'другий кліп починається з 4-ї секунди файла: ' + lay[1][2]);
+  const r = await p5.evaluate(async () => {
+    const V = window.VideoCut, c = document.getElementById('pv'), g = c.getContext('2d', { willReadFrequently: true }), m = await import('/videocut-app/js/player.js');
+    const raf = () => new Promise(r => requestAnimationFrame(r));
+    V.seek(1.0); await new Promise(r => setTimeout(r, 900));
+    const rows = []; m.play();
+    while (V.S.t < 3.2 && V.S.playing) { await raf(); const d = g.getImageData(c.width >> 1, c.height >> 1, 1, 1).data; rows.push({ t: V.S.t, y: d[0], seeking: [...document.querySelectorAll('#mediaPool video')].some(v => v.seeking && !v.paused) }); }
+    m.pause(); return rows;
+  });
+  // джерело після межі (t≥2) має світліти до ≈170 (4 с із 6); чорний кадр або «стара» картинка після межі — збій
+  const black = r.filter(x => x.t > 1.2 && x.y < 6).length;
+  const stale = r.filter(x => x.t > 2.12 && x.y < 120).length;
+  console.log(`     розріз: кадрів ${r.length}, чорних ${black}, застарілих після межі ${stale}`);
+  assert.equal(black, 0, 'чорних кадрів немає');
+  assert.ok(stale <= 1, 'після межі показується потрібний кадр, не старий: ' + stale);
+  await p5.close();
+});
+
+await step('водіння курсора: картинка оновлюється плавно, без довгих зависань і без стрибків назад', async () => {
+  const p6 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  await p6.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p6.goto(`http://localhost:${port}/index.html`);
+  await p6.setInputFiles('#fileInput', ramp);
+  await p6.waitForFunction(() => window.VideoCut?.S.project.clips.length > 0, null, { timeout: 20000 });
+  await p6.waitForTimeout(1500);
+  const r = await p6.evaluate(async () => {
+    const V = window.VideoCut, c = document.getElementById('pv'), g = c.getContext('2d', { willReadFrequently: true });
+    const raf = () => new Promise(r => requestAnimationFrame(r));
+    const shown = () => { const d = g.getImageData(c.width >> 1, c.height >> 1, 1, 1).data; return d[0] * 6 / 255; };
+    V.seek(0.3); await new Promise(r => setTimeout(r, 600));
+    const rows = [], t0 = performance.now();
+    for (;;) { const t = 0.3 + (performance.now() - t0) / 1000 * 1.2; if (t > 5.7) break; V.seek(t); await raf(); rows.push({ t, s: shown() }); }
+    let changes = 0, stall = 0, maxStall = 0, back = 0;
+    rows.forEach((x, i) => { if (i && Math.abs(x.s - rows[i - 1].s) > 0.01) { changes++; stall = 0; } else stall++; maxStall = Math.max(maxStall, stall); if (i && x.s < rows[i - 1].s - 0.05) back++; });
+    return { n: rows.length, changes, maxStall, back };
+  });
+  await p6.close();
+  console.log(`     водіння: оновлень ${r.changes} з ${r.n} кадрів, найдовша пауза ${r.maxStall} кадрів, стрибків назад ${r.back}`);
+  assert.ok(r.changes / r.n > 0.3, 'картинка оновлюється достатньо часто: ' + r.changes + '/' + r.n);
+  assert.ok(r.maxStall <= 20, 'без довгих зависань: ' + r.maxStall + ' кадрів');
+  assert.equal(r.back, 0, 'без стрибків назад');
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

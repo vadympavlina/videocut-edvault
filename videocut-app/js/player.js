@@ -71,9 +71,11 @@ function seekEl(v, t) {
   if (!seekHooked.has(v)) {
     seekHooked.add(v);
     v.addEventListener('seeked', () => {
+      if (S.playing) { wantTime.delete(v); return; }
+      draw(); // спершу завжди малюємо щойно знайдений кадр (навіть якщо курсор уже пішов далі), інакше при водінні картинка стоїть
       const w = wantTime.get(v);
-      if (w != null) { wantTime.delete(v); if (Math.abs(v.currentTime - w) > 0.02) { v.currentTime = w; return; } }
-      if (!S.playing) { draw(); syncPaused(); } // спершу малюємо щойно знайдений кадр, потім за потреби шукаємо наступний
+      if (w != null) { wantTime.delete(v); if (Math.abs(v.currentTime - w) > 0.02) { lastTarget.set(v, w); v.currentTime = w; return; } }
+      syncPaused();
     });
   }
   if (v.seeking) { wantTime.set(v, t); return; }
@@ -84,10 +86,46 @@ function seekEl(v, t) {
   lastTarget.set(v, t);
   v.currentTime = t;
 }
+// ── подвійна буферизація: наступний кліп готується заздалегідь ──
+// Місце розрізу, де файл «перестрибує» (вирізаний шматок), без підготовки змушує відео шукати кадр посеред відтворення:
+// картинка чорніє, звук рветься. Тому за ~1,5 с до межі наступний кліп ставиться на свій початок на вільному елементі
+// (власний або запасний, якщо наступний кліп із того самого файла), і на межі лише вмикається.
+const clipBind = new Map(), spareEls = new Map(); // кліп → елемент, що його зараз показує; файл → запасний елемент
+let prep = null;                                    // { clipId, el }: підготовлений наступний кліп
+const elFor = l => { const m = media.get(l.clip.mediaId); return m ? (clipBind.get(l.clip.id) || m.el || null) : null; };
+function spareFor(m) {
+  const url = previewUrl(m);
+  let v = spareEls.get(m.id);
+  if (v && v.dataset.src !== url) { v.removeAttribute('src'); v.load(); v.remove(); v = null; }
+  if (!v) {
+    v = document.createElement('video');
+    v.preload = 'auto'; v.playsInline = true; v.src = url; v.dataset.src = url;
+    document.getElementById('mediaPool').appendChild(v);
+    spareEls.set(m.id, v);
+  }
+  return v;
+}
+function resetBinding() { clipBind.clear(); prep = null; }
+function prepNext(t, L) {
+  const l = clipAt(t, L); if (!l) return;
+  const n = L[L.indexOf(l) + 1];
+  if (!n || n.start - t > 1.5) return;
+  if (prep && prep.clipId === n.clip.id) return;
+  const m2 = media.get(n.clip.mediaId); if (!m2 || m2.kind !== 'video' || !m2.el) return;
+  const cur = elFor(l), tgt = srcTime(n, n.start);
+  if (m2.el === cur && Math.abs(tgt - srcTime(l, l.end)) < 0.05 && (n.clip.speed || 1) === (l.clip.speed || 1)) { prep = { clipId: n.clip.id, el: cur }; return; } // шов без стрибка
+  const el = m2.el === cur ? spareFor(m2) : m2.el;
+  prep = { clipId: n.clip.id, el };
+  if (Math.abs(el.currentTime - tgt) > 0.04) el.currentTime = tgt;
+  el.playbackRate = n.clip.speed || 1;
+  if (!el.paused) el.pause();
+  setVolume(el, 0);
+}
+
 // відео, без яких кадр у паузі був би хибним: основне на курсорі й активні накладання
 function neededVideos() {
   const els = [], l = clipAt(S.t);
-  if (l) { const m = media.get(l.clip.mediaId); if (m && m.kind === 'video' && m.el) els.push(m.el); }
+  if (l) { const m = media.get(l.clip.mediaId), e = elFor(l); if (m && m.kind === 'video' && e) els.push(e); }
   for (const o of activeOv(S.t)) { const v = ovEls.get(o.id); if (v) els.push(v); }
   return els;
 }
@@ -99,7 +137,7 @@ function previewProvider(l) {
   const m = media.get(l.clip.mediaId);
   if (!m || !m.el) return null;
   if (m.kind === 'image') return { src: m.el, w: m.width, h: m.height };
-  const v = m.el;
+  const v = elFor(l) || m.el;
   if (v.readyState < 2) return null;
   return { src: v, w: v.videoWidth || m.width, h: v.videoHeight || m.height };
 }
@@ -145,11 +183,11 @@ const activeOv = t => S.project.overlays.filter(o => o.type === 'video' && t >= 
 
 function draw() {
   if (!ctx) return;
-  if (!S.playing && !framesReady()) {
+  if (!framesReady()) {
     // чекаємо кадр; якщо він так і не з'явиться (зламаний файл) — через 0,8 с малюємо те, що є
     const now = performance.now();
     if (!waitSince) waitSince = now;
-    if (now - waitSince < 800) { clearTimeout(retryT); retryT = setTimeout(requestDraw, 120); return; }
+    if (now - waitSince < (S.playing ? 500 : 800)) { if (!S.playing) { clearTimeout(retryT); retryT = setTimeout(requestDraw, 120); } return; }
   }
   waitSince = 0;
   renderScene(ctx, canvas.width, canvas.height, S.t, previewProvider, undefined, { editing: !S.playing, ovFrame: ovProvider });
@@ -159,7 +197,7 @@ function draw() {
 export function seek(t) {
   const d = duration();
   S.t = Math.max(0, Math.min(t, d));
-  if (S.playing) { startPerf = performance.now(); startT = S.t; syncElements(true); }
+  if (S.playing) { startPerf = performance.now(); startT = S.t; resetBinding(); syncElements(true); }
   else syncPaused();
   requestDraw();
   emit('time');
@@ -179,7 +217,7 @@ function syncPaused() {
   if (!l) return;
   const m = media.get(l.clip.mediaId);
   if (!m || m.kind !== 'video') return;
-  const v = m.el, st = srcTime(l, S.t);
+  const v = elFor(l) || m.el, st = srcTime(l, S.t);
   if (Math.abs(v.currentTime - st) > 0.02 || v.readyState < 2) seekEl(v, st);
 }
 
@@ -191,6 +229,7 @@ export function play() {
   if (S.t >= d - 0.02) S.t = 0;
   audioCtx();
   S.playing = true;
+  resetBinding();
   startPerf = performance.now(); startT = S.t;
   syncElements(true);
   emit('play');
@@ -201,6 +240,7 @@ export function pause() {
   S.playing = false;
   cancelAnimationFrame(raf);
   media.forEach(m => { if (m.el && m.el.pause) m.el.pause(); });
+  spareEls.forEach(v => v.pause()); resetBinding();
   ovEls.forEach(v => v.pause());
   emit('play');
   syncPaused();
@@ -216,8 +256,8 @@ function tick(now) {
   // якщо активне відео підвисло (буферизація) — тримаємо годинник за ним
   const l = clipAt(t, L);
   if (l) {
-    const m = media.get(l.clip.mediaId);
-    if (m && m.kind === 'video' && !m.el.paused && m.el.readyState < 3) { startPerf = now; startT = S.t; t = S.t; }
+    const m = media.get(l.clip.mediaId), e = elFor(l);
+    if (m && m.kind === 'video' && e && !e.paused && e.readyState < 3) { startPerf = now; startT = S.t; t = S.t; }
   }
   // відео поверх основного теж може «підвисати» — тоді час не біжить уперед за ним
   if (t > S.t) for (const o of activeOv(S.t)) { const v = ovEls.get(o.id); if (v && !v.paused && v.readyState < 3 && v.readyState > 0) { startPerf = now; startT = S.t; t = S.t; break; } }
@@ -227,6 +267,7 @@ function tick(now) {
   }
   S.t = t;
   syncElements(false, L);
+  prepNext(S.t, L);
   draw();
   emit('time');
   raf = requestAnimationFrame(tick);
@@ -239,7 +280,9 @@ function syncElements(hard, L = layout()) {
   if (l) {
     const c = l.clip, m = media.get(c.mediaId);
     if (m && m.kind === 'video') {
-      const v = m.el, st = srcTime(l, t);
+      if (prep && prep.clipId === c.id) clipBind.set(c.id, prep.el);   // кліп, підготовлений заздалегідь
+      for (const id of [...clipBind.keys()]) if (id !== c.id) clipBind.delete(id);
+      const v = clipBind.get(c.id) || m.el, st = srcTime(l, t);
       active.add(v);
       const rate = c.speed || 1;
       if (v.playbackRate !== rate) v.playbackRate = rate;
@@ -270,7 +313,8 @@ function syncElements(hard, L = layout()) {
     setVolume(a, (mu.volume ?? 1) * fadeAlpha(t, mu.start, md, mu.fadeIn || 0, mu.fadeOut || 0) * (mu.duck ? duckGain(t) : 1));
     if (a.paused) a.play().catch(() => {});
   }
-  media.forEach(m => { if (m.el && m.el.pause && !active.has(m.el) && !m.el.paused) m.el.pause(); });
+  media.forEach(m => { if (m.el && m.el.pause && !active.has(m.el) && !m.el.paused && !(prep && prep.el === m.el)) m.el.pause(); });
+  spareEls.forEach(v => { if (!active.has(v) && !v.paused && !(prep && prep.el === v)) v.pause(); });
   ovEls.forEach(v => { if (!active.has(v) && !v.paused) v.pause(); });
 }
 

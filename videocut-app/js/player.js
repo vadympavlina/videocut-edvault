@@ -62,41 +62,37 @@ function setVolume(el, v) {
   else el.volume = Math.max(0, Math.min(1, v));
 }
 
-// ── кадр без мерехтіння при перемотуванні ──
-// Поки відеоелемент шукає новий кадр, він віддає порожнє місце або застарілий кадр. Тому в паузі ми запам'ятовуємо
-// останній повний кадр кожного елемента й показуємо його, доки пошук не закінчиться.
-const heldFrames = new WeakMap(); // відеоелемент → { cv, src }
-function frameOf(v, w, h) {
-  const ready = v.readyState >= 2 && !v.seeking;
-  if (ready) {
-    if (!S.playing && w && h) { // у паузі зберігаємо повний кадр (до 1280 пікселів) на випадок наступної перемотки
-      let hd = heldFrames.get(v);
-      const k = Math.min(1, 1280 / Math.max(w, h)), cw = Math.max(1, Math.round(w * k)), ch = Math.max(1, Math.round(h * k));
-      if (!hd) { hd = { cv: document.createElement('canvas'), src: '' }; heldFrames.set(v, hd); }
-      if (hd.cv.width !== cw || hd.cv.height !== ch) { hd.cv.width = cw; hd.cv.height = ch; }
-      try { hd.cv.getContext('2d').drawImage(v, 0, 0, cw, ch); hd.src = v.currentSrc; } catch (e) { /* кадр ще не готовий */ }
-    }
-    return { src: v, w, h };
-  }
-  const hd = heldFrames.get(v);
-  if (hd && hd.src === v.currentSrc && !S.playing) return { src: hd.cv, w, h };
-  return v.readyState >= 2 && S.playing ? { src: v, w, h } : null;
-}
-// Запити на перемотку не скасовують один одного: поки йде пошук, запам'ятовуємо лише останню ціль
-const wantTime = new WeakMap(), seekHooked = new WeakSet();
+// ── перемотування без мерехтіння ──
+// Поки відеоелемент шукає кадр, він віддає порожнє місце або застарілий кадр. Тому в паузі ми НЕ перемальовуємо перегляд,
+// доки всі потрібні відео не готові: на екрані лишається останній цілий кадр. Малюємо одразу, коли пошук закінчено.
+// Запити на перемотку не скасовують один одного: поки йде пошук, запам'ятовуємо лише останню ціль.
+const wantTime = new WeakMap(), seekHooked = new WeakSet(), lastTarget = new WeakMap();
 function seekEl(v, t) {
   if (!seekHooked.has(v)) {
     seekHooked.add(v);
     v.addEventListener('seeked', () => {
       const w = wantTime.get(v);
       if (w != null) { wantTime.delete(v); if (Math.abs(v.currentTime - w) > 0.02) { v.currentTime = w; return; } }
-      if (!S.playing) { requestDraw(); syncPaused(); }
+      if (!S.playing) { draw(); syncPaused(); } // спершу малюємо щойно знайдений кадр, потім за потреби шукаємо наступний
     });
   }
   if (v.seeking) { wantTime.set(v, t); return; }
   wantTime.delete(v);
+  // браузер може округлити час до кадру: якщо ми вже шукали цю саму ціль і відео стоїть поруч, не шукаємо знову (інакше цикл)
+  const last = lastTarget.get(v);
+  if (last != null && Math.abs(last - t) < 1e-3 && Math.abs(v.currentTime - t) < 0.06 && v.readyState >= 2) return;
+  lastTarget.set(v, t);
   v.currentTime = t;
 }
+// відео, без яких кадр у паузі був би хибним: основне на курсорі й активні накладання
+function neededVideos() {
+  const els = [], l = clipAt(S.t);
+  if (l) { const m = media.get(l.clip.mediaId); if (m && m.kind === 'video' && m.el) els.push(m.el); }
+  for (const o of activeOv(S.t)) { const v = ovEls.get(o.id); if (v) els.push(v); }
+  return els;
+}
+const framesReady = () => neededVideos().every(v => v.error || (v.readyState >= 2 && !v.seeking));
+let waitSince = 0, retryT = 0;
 
 // джерело кадру для перегляду — відеоелемент або зображення
 function previewProvider(l) {
@@ -104,7 +100,8 @@ function previewProvider(l) {
   if (!m || !m.el) return null;
   if (m.kind === 'image') return { src: m.el, w: m.width, h: m.height };
   const v = m.el;
-  return frameOf(v, v.videoWidth || m.width, v.videoHeight || m.height);
+  if (v.readyState < 2) return null;
+  return { src: v, w: v.videoWidth || m.width, h: v.videoHeight || m.height };
 }
 
 let drawQueued = false;
@@ -135,8 +132,8 @@ function cleanupOvEls() {
 }
 function ovProvider(o, st) {
   const v = ovEl(o);
-  if (!v) return null;
-  return frameOf(v, v.videoWidth, v.videoHeight);
+  if (!v || v.readyState < 2) return null;
+  return { src: v, w: v.videoWidth, h: v.videoHeight };
 }
 // кадр накладання зараз (для піпетки й автоматичного пошуку кольору фону)
 export function ovFrameNow(o) {
@@ -148,6 +145,13 @@ const activeOv = t => S.project.overlays.filter(o => o.type === 'video' && t >= 
 
 function draw() {
   if (!ctx) return;
+  if (!S.playing && !framesReady()) {
+    // чекаємо кадр; якщо він так і не з'явиться (зламаний файл) — через 0,8 с малюємо те, що є
+    const now = performance.now();
+    if (!waitSince) waitSince = now;
+    if (now - waitSince < 800) { clearTimeout(retryT); retryT = setTimeout(requestDraw, 120); return; }
+  }
+  waitSince = 0;
   renderScene(ctx, canvas.width, canvas.height, S.t, previewProvider, undefined, { editing: !S.playing, ovFrame: ovProvider });
 }
 

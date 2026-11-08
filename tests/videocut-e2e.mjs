@@ -14,7 +14,8 @@ const tmp = await mkdtemp(join(tmpdir(), 'vc-'));
 const video = join(tmp, 'v.webm'), audio = join(tmp, 'a.webm');
 const ff = (...a) => execFileSync(process.env.FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', ...a]);
 ff('-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=30:duration=12', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=12', '-c:v', 'libvpx', '-b:v', '800k', '-c:a', 'libopus', '-shortest', video);
-const green = join(tmp, 'g.webm'), fx = join(tmp, 'fx.webm'), ramp = join(tmp, 'r.webm');
+const green = join(tmp, 'g.webm'), fx = join(tmp, 'fx.webm'), ramp = join(tmp, 'r.webm'), rampB = join(tmp, 'rb.webm');
+ff('-f', 'lavfi', '-i', "color=c=gray:s=640x360:r=30:d=6,geq=lum='clip(255*T/6,0,255)':cb=60:cr=200", '-c:v', 'libvpx', '-g', '30', '-b:v', '900k', rampB);
 ff('-f', 'lavfi', '-i', "color=c=gray:s=640x360:r=30:d=6,geq=lum='clip(255*T/6,0,255)':cb=128:cr=128", '-c:v', 'libvpx', '-g', '30', '-b:v', '900k', ramp);
 ff('-f', 'lavfi', '-i', 'color=c=black:s=640x360:r=30:d=4,drawbox=x=100:y=80:w=120:h=120:color=white:t=fill,drawbox=x=400:y=200:w=100:h=100:color=0xffd000:t=fill', '-c:v', 'libvpx', '-b:v', '600k', fx);
 ff('-f', 'lavfi', '-i', 'color=c=0x00b140:s=640x360:r=30:d=4,drawbox=x=100:y=80:w=120:h=200:color=0xe0ac86:t=fill,drawbox=x=300:y=80:w=100:h=100:color=0xd02020:t=fill,drawbox=x=450:y=0:w=100:h=360:color=0x00551f:t=fill', '-c:v', 'libvpx', '-b:v', '600k', green);
@@ -351,6 +352,80 @@ await step('перемотування: кадр не мерехтить і не
     assert.ok(bad.length <= 3, `мерехтіння/стрибки${key ? ' (з хромакеєм)' : ''} у ${bad.length} кадрах з ${r.length * 2}: ` + bad.slice(0, 6).join('; '));
   }
   await p2.close();
+});
+
+await step('перемотування по кількох кліпах: кадр завжди з того кліпа, де курсор, без повторів, залипань і змішування', async () => {
+  const p3 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  await p3.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p3.goto(`http://localhost:${port}/index.html`);
+  for (const f of [ramp, rampB]) { await p3.setInputFiles('#fileInput', f); await p3.waitForTimeout(900); }
+  await p3.waitForFunction(() => window.VideoCut?.S.project.clips.length >= 2, null, { timeout: 20000 });
+  await p3.waitForTimeout(800);
+  const info = await p3.evaluate(() => { const V = window.VideoCut; return { n: V.S.project.clips.length, d: V.duration() }; });
+  assert.ok(info.n >= 2 && info.d > 11, 'два кліпи на таймлайні: ' + JSON.stringify(info));
+  // Очікуваний кадр: перші 6 с — нейтральний градієнт (кліп A), далі — підфарбований (кліп B)
+  const probe = () => p3.evaluate(() => { const c = document.getElementById('pv'), g = c.getContext('2d', { willReadFrequently: true }); const d = g.getImageData(Math.round(c.width / 2), Math.round(c.height / 2), 1, 1).data; return { r: d[0], g: d[1], b: d[2], y: 0.299 * d[0] + 0.587 * d[1] + 0.114 * d[2] }; });
+  const expect = t => (t < 6 ? { gray: 255 * t / 6, tint: false } : { gray: 255 * (t - 6) / 6, tint: true });
+  const tinted = p => p.r > p.b + 40;
+  // «усталено» — коли жодне відео не шукає кадр і перегляд перемальовано
+  const settle = async () => {
+    await p3.waitForFunction(() => [...document.querySelectorAll('#mediaPool video')].every(v => !v.seeking && (v.readyState >= 2 || !v.src)), null, { timeout: 6000 }).catch(() => {});
+    await p3.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60)))));
+    return probe();
+  };
+  const bad = [];
+  const seekRaf = async t => { await p3.evaluate(t => window.VideoCut.seek(t), t); await p3.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))); };
+  // а) безперервне водіння через межу кліпів уперед і назад, з нерівною швидкістю
+  const path = []; for (let i = 0; i < 70; i++) path.push(0.5 + i * 0.16); for (let i = 0; i < 60; i++) path.push(11.5 - i * 0.18);
+  for (const t of path) {
+    await seekRaf(t); const p = await probe(), e = expect(t), nearEdge = Math.abs(t - 6) < 0.8;
+    if (!nearEdge && tinted(p) !== e.tint) bad.push(`водіння t=${t.toFixed(2)}: не той кліп (${p.r},${p.g},${p.b})`);
+    if (p.r < 6 && p.g < 6 && p.b < 6 && t > 0.8 && t < 11) bad.push(`водіння t=${t.toFixed(2)}: порожньо`);
+  }
+  // б) стрибки в довільні місця: після зупинки кадр має точно відповідати курсору
+  for (const t of [9.3, 1.2, 7.7, 5.5, 6.4, 0.4, 10.8, 3.3, 6.05, 5.95, 8.8, 2.2]) {
+    await seekRaf(t); const p = await settle(), e = expect(t);
+    if (tinted(p) !== e.tint) bad.push(`стрибок t=${t}: не той кліп (${p.r},${p.g},${p.b})`);
+    else if (Math.abs(p.y - e.gray) > 30) bad.push(`стрибок t=${t}: кадр ${Math.round(p.y)} замість ~${Math.round(e.gray)}`);
+  }
+  // в) відтворення і пауза: кадр після паузи відповідає часу
+  await seekRaf(4.5); await p3.evaluate(() => window.VideoCut.S.playing || document.querySelector('[data-a="play"], #btnPlay')?.click());
+  const playing = () => p3.evaluate(() => [...document.querySelectorAll('#mediaPool video')].filter(v => !v.paused && v.src).length);
+  await p3.evaluate(async () => { const m = await import('/videocut-app/js/player.js'); m.play(); });
+  await p3.waitForTimeout(500);
+  const n1 = await playing(); if (n1 !== 1) bad.push(`відтворення до межі кліпів: грає ${n1} відео замість 1`);
+  await p3.waitForTimeout(1600);
+  const n2 = await playing(); if (n2 !== 1) bad.push(`відтворення після межі кліпів: грає ${n2} відео замість 1 (накладання)`);
+  await p3.evaluate(async () => { const m = await import('/videocut-app/js/player.js'); m.pause(); });
+  const n3 = await playing(); if (n3 !== 0) bad.push(`після паузи грає ${n3} відео`);
+  const tPause = await p3.evaluate(() => window.VideoCut.S.t); const pp = await settle(), ee = expect(tPause);
+  if (tinted(pp) !== ee.tint || Math.abs(pp.y - ee.gray) > 30) bad.push(`пауза t=${tPause.toFixed(2)}: кадр ${Math.round(pp.y)} замість ~${Math.round(ee.gray)}`);
+  await p3.close();
+  console.log(`     кількох кліпів: збоїв ${bad.length}`);
+  assert.equal(bad.length, 0, bad.slice(0, 8).join('; '));
+});
+
+await step('розрізаний кліп: обидві половини ділять один відеоелемент, перемотування через розріз без збоїв', async () => {
+  const p4 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  await p4.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p4.goto(`http://localhost:${port}/index.html`);
+  await p4.setInputFiles('#fileInput', ramp);
+  await p4.waitForFunction(() => window.VideoCut?.S.project.clips.length > 0, null, { timeout: 20000 });
+  await p4.waitForTimeout(1000);
+  await p4.evaluate(() => { const V = window.VideoCut; V.S.sel = { kind: 'clip', id: V.S.project.clips[0].id }; V.seek(3); });
+  await p4.keyboard.press('s');
+  await p4.waitForFunction(() => window.VideoCut.S.project.clips.length === 2, null, { timeout: 5000 });
+  const probe = () => p4.evaluate(() => { const c = document.getElementById('pv'), g = c.getContext('2d', { willReadFrequently: true }); const d = g.getImageData(c.width >> 1, c.height >> 1, 1, 1).data; return 0.299 * d[0] + 0.587 * d[1] + 0.114 * d[2]; });
+  const bad = [];
+  for (const t of [5.5, 2.5, 3.5, 2.9, 3.1, 0.5, 5.9, 3.0, 2.95, 4.4]) {
+    await p4.evaluate(t => window.VideoCut.seek(t), t);
+    await p4.waitForFunction(() => [...document.querySelectorAll('#mediaPool video')].every(v => !v.seeking && v.readyState >= 2), null, { timeout: 6000 }).catch(() => {});
+    await p4.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60)))));
+    const y = await probe(), want = 255 * t / 6;
+    if (Math.abs(y - want) > 30) bad.push(`t=${t}: кадр ${Math.round(y)} замість ~${Math.round(want)}`);
+  }
+  await p4.close();
+  assert.equal(bad.length, 0, bad.join('; '));
 });
 
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));

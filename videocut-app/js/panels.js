@@ -6,6 +6,7 @@ import { removeMedia, thumbAt } from './media.js';
 import { seek } from './player.js';
 import { parseSubtitles } from './srt.js';
 import { renderCapTab, markActiveCaption, capTabClick, capTabInput, capTabChange, capTabToggle, captionInspector, ccAction, speedHtml } from './cc-panel.js';
+import { KEY_DEFAULT } from './chroma.js';
 import { isLayer, LAYOUTS, layoutOf, applyLayout, cropSides, setCropSide, setScale, setShape, resetCrop } from './layer.js';
 import { $, esc, icon, fmt, fmtShort, parseTime, toast, confirmDialog, fmtBytes, balanceSegs, keepFocus, typingIn, setHtml } from './ui.js';
 
@@ -396,12 +397,24 @@ function layerPanel(o) {
     <div class="field" style="margin-top:12px"><label>Непрозорість<span class="aux" data-show="opacity">${Math.round((o.opacity ?? 1) * 100)}%</span></label><input type="range" data-f="opacity" data-pct="1" min="0.1" max="1" step="0.01" value="${o.opacity ?? 1}"></div>
     <div class="field"><label>Рамка</label>${swatches(o.border && o.border !== 'none' ? o.border : '', 'border')}<button class="chip${!o.border || o.border === 'none' ? ' on' : ''}" data-a="noBorder" style="margin-top:6px">${icon('x')}Без рамки</button></div>
     <div class="chips">${video ? chip('shadow', 'Тінь', !!o.shadow, 'true', 'sparkle') : ''}${chip('flip', 'Дзеркально', !!o.flip, 'true', 'flipH')}</div>`) +
+    keySection(o) +
     (video ? sec('Звук', 'volume', `<div class="chips">${chip('muted', 'Без звуку', !!o.muted, 'true', 'mute')}</div>${!o.muted ? `<div class="field"><label>Гучність<span class="aux" data-show="volume">${Math.round((o.volume ?? 1) * 100)}%</span></label><input type="range" data-f="volume" data-pct="1" min="0" max="2" step="0.05" value="${o.volume ?? 1}"></div>` : ''}`) : '') +
     sec('Показ', 'play', video ? `<div class="field"><label>Показувати<span class="aux">${fmt(o.start, true)} – ${fmt(o.start + o.dur, true)}</span></label></div>${animSeg(o)}
       <div class="chips"><button class="chip" data-a="toCursor">${icon('stepFwd')}Почати з курсора</button><button class="chip" data-a="pipSync">${icon('fit')}Разом з відео</button></div>` : timing(o)) +
     actions(act('split', 'split', 'Розрізати', 'data-key="S"'), act('dup', 'copy', 'Дублювати'), act('front', 'front', 'Наперед'), act('del', 'trash', 'Видалити', 'data-danger="1"')) +
     more('ov-layer', `<div class="insp-row">${timeField('start', 'Початок', o.start)}${timeField('dur', 'Тривалість', o.dur)}</div>
       ${video ? `<p class="hint">Фрагмент файлу ${fmt(o.in || 0)}–${fmt((o.in || 0) + o.dur)}${m ? ` з ${fmt(m.duration)}` : ''}. Краї на доріжці «Поверх» обрізають початок і кінець.</p>` : ''}`);
+}
+
+// ── хромакей (зелений екран): прибирає однотонний фон у відео чи картинки поверх ──
+function keySection(o) {
+  const K = { ...KEY_DEFAULT, ...(o.key || {}) }, on = !!K.on;
+  const sl = (f, label, min, max, step, val) => `<div class="field"><label>${label}<span class="aux" data-show="key.${f}">${Math.round(val * 100)}%</span></label><input type="range" data-f="key.${f}" data-pct="1" min="${min}" max="${max}" step="${step}" value="${val}"></div>`;
+  return sec('Зелений екран', 'wand', `<div class="chips"><button class="chip${on ? ' on' : ''}" data-a="keyToggle">${icon(on ? 'check' : 'wand')}Прибрати фон</button></div>
+    ${on ? `<div class="field key-row"><label>Колір фону</label><div class="key-pick"><input type="color" class="key-color" data-f="key.color" value="${K.color}" aria-label="Колір фону"><button class="btn btn-outline btn-sm" data-a="keyPick" data-tip="Клікніть на перегляді по фону">${icon('dropper')}<span>${S.pickKey === o.id ? 'Клікніть по фону…' : 'Піпетка'}</span></button><button class="btn btn-outline btn-sm" data-a="keyAuto" data-tip="Визначити колір фону автоматично">${icon('wand')}<span>Знайти</span></button></div></div>
+      ${sl('tol', 'Наскільки прибирати', 0.02, 0.6, 0.005, K.tol)}${sl('soft', 'М’який край', 0.01, 0.4, 0.005, K.soft)}${sl('spill', 'Прибрати зелений відблиск', 0, 1, 0.01, K.spill)}
+      <div class="chips"><button class="chip${S.keyMatte === o.id ? ' on' : ''}" data-a="keyMatte">${icon(S.keyMatte === o.id ? 'check' : 'shapes')}Показати маску</button></div>
+      <p class="hint">Постав фон під людиною: основне відео чи картинку. Натисніть «Весь кадр» у «Розташуванні», щоб накласти на весь екран. Маска — біле лишається, чорне зникає.</p>` : `<p class="hint">Для відео чи картинки на однотонному зеленому (або синьому) фоні: фон стане прозорим, і ви накладете людину на будь-яке відео.</p>`}`);
 }
 
 function animSeg(o) {
@@ -471,6 +484,27 @@ function musicPanel(x) {
       ${range('fadeIn', 'Тривалість появи', 0, 5, 0.1, x.fadeIn || 0, ' с')}
       ${range('fadeOut', 'Тривалість зникнення', 0, 8, 0.1, x.fadeOut || 0, ' с')}
       <div class="insp-row">${timeField('start', 'Початок', x.start)}<div class="field half"><label>Тривалість</label><div class="static">${fmtShort(musicDur(x))}</div></div></div>`);
+}
+
+function keyToggle(o) {
+  const was = !!(o.key && o.key.on);
+  o.key = { ...KEY_DEFAULT, ...(o.key || {}), on: !was };
+  if (!was) {
+    // фон прозорий — рамка, коло й тінь тільки заважатимуть
+    if (o.type === 'video' && (!o.shape || o.shape === 'circle')) o.shape = 'rect';
+    o.border = 'none'; o.shadow = false;
+    keyAuto(o, false);
+  } else { S.keyMatte = null; S.pickKey = null; document.body.classList.remove('picking-key'); }
+  commit(); renderInspector();
+}
+// колір фону береться зі зразків біля країв кадру
+async function keyAuto(o, say) {
+  const { autoKeyColor } = await import('./chroma.js');
+  const { ovFrameNow } = await import('./player.js');
+  const f = ovFrameNow(o);
+  const hx = f && f.src ? autoKeyColor(f.src, f.w, f.h) : null;
+  if (hx) { o.key = { ...KEY_DEFAULT, ...o.key, color: hx }; commit(); renderInspector(); if (say) toast('Колір фону знайдено: ' + hx); }
+  else if (say) toast('Не вдалося знайти однотонний фон — оберіть колір піпеткою', 'err');
 }
 
 // ── обробка введення ──
@@ -592,6 +626,10 @@ function onClick(e) {
     case 'layout': if (o) { applyLayout(o, b.dataset.v); commit(); } break;
     case 'resetCrop': if (o) { resetCrop(o); commit(); } break;
     case 'noBorder': if (o) { o.border = 'none'; commit(); } break;
+    case 'keyToggle': if (o) keyToggle(o); break;
+    case 'keyPick': if (o) { S.pickKey = S.pickKey === o.id ? null : o.id; document.body.classList.toggle('picking-key', !!S.pickKey); if (S.pickKey) toast('Клікніть по зеленому фону на перегляді'); renderInspector(); } break;
+    case 'keyAuto': if (o) keyAuto(o, true); break;
+    case 'keyMatte': if (o) { S.keyMatte = S.keyMatte === o.id ? null : o.id; emit('project', { live: true, from: 'insp' }); renderInspector(); } break;
     case 'pipSync': if (o) { const m = media.get(o.mediaId); o.start = 0; o.in = 0; o.dur = m ? m.duration : o.dur; commit(); } break;
     case 'trAll': transitionsAll(); break;
     case 'tr': if (o) { if (b.dataset.v) o.tr = { type: b.dataset.v, d: (o.tr && o.tr.d) || 0.6 }; else delete o.tr; commit(); if (b.dataset.v) { const l = layout().find(x => x.clip.id === o.id); if (l) seek(Math.max(0, l.start - 0.8)); } } break;

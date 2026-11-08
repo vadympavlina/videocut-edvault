@@ -103,6 +103,12 @@ function ovProvider(o, st) {
   if (!v || v.readyState < 2) return null;
   return { src: v, w: v.videoWidth, h: v.videoHeight };
 }
+// кадр накладання зараз (для піпетки й автоматичного пошуку кольору фону)
+export function ovFrameNow(o) {
+  if (o.type === 'video') return ovProvider(o);
+  const m = media.get(o.mediaId);
+  return m && m.el ? { src: m.el, w: m.width || m.el.naturalWidth, h: m.height || m.el.naturalHeight } : null;
+}
 const activeOv = t => S.project.overlays.filter(o => o.type === 'video' && t >= o.start && t < o.start + o.dur);
 
 function draw() {

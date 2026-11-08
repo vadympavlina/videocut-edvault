@@ -241,10 +241,10 @@ export function drawOverlay(ctx, o, W, H, k, x = {}) {
       ctx.restore();
       break;
     }
-    case 'video': drawLayer(ctx, o, x.frame, W, H, k); break;
+    case 'video': drawLayer(ctx, o, x.frame, W, H, k, !!x.editing); break;
     case 'image': {
       const m = media.get(o.mediaId);
-      if (m && m.el) drawLayer(ctx, o, { src: m.el, w: m.width || m.el.naturalWidth, h: m.height || m.el.naturalHeight }, W, H, k);
+      if (m && m.el) drawLayer(ctx, o, { src: m.el, w: m.width || m.el.naturalWidth, h: m.height || m.el.naturalHeight }, W, H, k, !!x.editing);
       break;
     }
   }
@@ -404,7 +404,7 @@ export const ANIMS = { none: 'Одразу', fade: 'Плавно', up: 'Зниз
 export const animOf = o => o.anim || (o.fade ? 'fade' : 'none');
 function drawAnimated(ctx, o, W, H, k, t, editing, frame) {
   const anim = editing ? 'none' : animOf(o);
-  const x = { t, frame };
+  const x = { t, frame, editing };
   if (anim === 'none') { drawOverlay(ctx, o, W, H, k, x); return; }
   const inD = Math.min(0.5, o.dur / 3), outD = Math.min(0.35, o.dur / 4);
   const pin = clamp01((t - o.start) / inD), pout = clamp01((o.start + o.dur - t) / outD);

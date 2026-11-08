@@ -1,6 +1,7 @@
 // Накладання (друга відеодоріжка): відео й картинки поверх основного відео —
 // розташування, обрізка країв, форма, рамка, прозорість і малювання на кадрі.
-import { media, outputSize } from './state.js';
+import { S, media, outputSize } from './state.js';
+import { keyOf, keyFrame } from './chroma.js';
 
 export const isLayer = o => !!o && (o.type === 'video' || o.type === 'image');
 const FULL = { x: 0, y: 0, w: 1, h: 1 };
@@ -158,7 +159,9 @@ function rrect(ctx, x, y, w, h, r) {
   ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
-export function drawLayer(ctx, o, f, W, H, k) {
+// проміжний канвас для кадру, який проходить крізь хромакей
+let scratch = null;
+export function drawLayer(ctx, o, f, W, H, k, editing = false) {
   let bx = o.x * W, by = o.y * H, bw = o.w * W, bh = o.h * H;
   if (bw < 0) { bx += bw; bw = -bw; } if (bh < 0) { by += bh; bh = -bh; }
   if (bw < 1 || bh < 1) return;
@@ -173,7 +176,8 @@ export function drawLayer(ctx, o, f, W, H, k) {
   };
   ctx.save();
   ctx.globalAlpha *= o.opacity ?? 1;
-  if (video) {
+  const K = keyOf(o);
+  if (video && !K) {
     ctx.save();
     if (o.shadow !== false) { ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 24 * k; ctx.shadowOffsetY = 6 * k; }
     path(); ctx.fillStyle = '#111'; ctx.fill();
@@ -184,9 +188,22 @@ export function drawLayer(ctx, o, f, W, H, k) {
     ctx.save(); path(); ctx.clip();
     if (o.flip) { ctx.translate(bx + bw / 2, 0); ctx.scale(-1, 1); ctx.translate(-(bx + bw / 2), 0); }
     const dw = f.w * r, dh = f.h * r, dx = bx - v.x * f.w * r, dy = by - v.y * f.h * r;
+    const put = (g, x, y, w, h) => {
+      if (f.src && typeof f.src.draw === 'function' && !(f.src instanceof HTMLCanvasElement)) f.src.draw(g, x, y, w, h);
+      else g.drawImage(f.src, x, y, w, h);
+    };
     try {
-      if (f.src && typeof f.src.draw === 'function' && !(f.src instanceof HTMLCanvasElement)) f.src.draw(ctx, dx, dy, dw, dh);
-      else ctx.drawImage(f.src, dx, dy, dw, dh);
+      if (K) {
+        // хромакей: малюємо видиму частину кадру у проміжний канвас розміром з рамку, прибираємо фон і кладемо результат у рамку
+        const sw = Math.max(1, Math.round(bw)), sh = Math.max(1, Math.round(bh));
+        if (!scratch) scratch = document.createElement('canvas');
+        if (scratch.width !== sw || scratch.height !== sh) { scratch.width = sw; scratch.height = sh; }
+        const g = scratch.getContext('2d');
+        g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, sw, sh);
+        put(g, -v.x * f.w * r, -v.y * f.h * r, dw, dh);
+        const out = keyFrame(scratch, sw, sh, K, editing && S.keyMatte === o.id);
+        ctx.drawImage(out, bx, by, bw, bh); // обрізка за формою й дзеркало вже застосовані на ctx
+      } else put(ctx, dx, dy, dw, dh);
     } catch (e) { /* кадр ще не готовий */ }
     ctx.restore();
   }

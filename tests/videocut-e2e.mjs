@@ -14,6 +14,8 @@ const tmp = await mkdtemp(join(tmpdir(), 'vc-'));
 const video = join(tmp, 'v.webm'), audio = join(tmp, 'a.webm');
 const ff = (...a) => execFileSync(process.env.FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', ...a]);
 ff('-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=30:duration=12', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=12', '-c:v', 'libvpx', '-b:v', '800k', '-c:a', 'libopus', '-shortest', video);
+const green = join(tmp, 'g.webm');
+ff('-f', 'lavfi', '-i', 'color=c=0x00b140:s=640x360:r=30:d=4,drawbox=x=100:y=80:w=120:h=200:color=0xe0ac86:t=fill,drawbox=x=300:y=80:w=100:h=100:color=0xd02020:t=fill,drawbox=x=450:y=0:w=100:h=360:color=0x00551f:t=fill', '-c:v', 'libvpx', '-b:v', '600k', green);
 ff('-f', 'lavfi', '-i', 'sine=frequency=300:duration=6', '-c:a', 'libopus', audio);
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml' };
@@ -205,6 +207,60 @@ await step('файл від сторінки, що відкрила редакт
   await p2.waitForFunction(() => window.VideoCut?.S.project.clips.length > 0, null, { timeout: 20000 });
   assert.equal(await p2.evaluate(() => location.search), '', 'адресу очищено');
   await p2.close();
+});
+
+await step('хромакей: шейдер (WebGL і запасний варіант) прибирає зелений і темно-зелений, лишає шкіру, червоне, біле й чорне', async () => {
+  const r = await page.evaluate(async () => {
+    const { keyFrame, KEY_DEFAULT, usesGL } = await import('/videocut-app/js/chroma.js');
+    const cols = ['#00b140', '#00551f', '#e0ac86', '#d02020', '#ffffff', '#000000', '#3060d0'];
+    const src = document.createElement('canvas'); src.width = cols.length; src.height = 1;
+    const g = src.getContext('2d'); cols.forEach((c, i) => { g.fillStyle = c; g.fillRect(i, 0, 1, 1); });
+    const alphas = cpu => { const out = keyFrame(src, cols.length, 1, { ...KEY_DEFAULT, on: true }, false, cpu); const c = document.createElement('canvas'); c.width = cols.length; c.height = 1; const x = c.getContext('2d'); x.drawImage(out, 0, 0, cols.length, 1); return [...x.getImageData(0, 0, cols.length, 1).data].filter((_, i) => i % 4 === 3); };
+    return { gl: usesGL(), a: alphas(false), c: alphas(true) };
+  });
+  for (const a of [r.a, r.c]) {
+    assert.ok(a[0] < 12 && a[1] < 40, 'зелений і його тінь прозорі: ' + a.join());
+    assert.ok(a.slice(2).every(v => v > 235), 'шкіра, червоне, біле, чорне, синє лишаються: ' + a.join());
+  }
+});
+
+await step('хромакей: колір фону знаходиться автоматично по краях кадру', async () => {
+  const hex = await page.evaluate(async () => {
+    const { autoKeyColor } = await import('/videocut-app/js/chroma.js');
+    const c = document.createElement('canvas'); c.width = 320; c.height = 180; const g = c.getContext('2d');
+    g.fillStyle = '#12b84a'; g.fillRect(0, 0, 320, 180); g.fillStyle = '#c8a080'; g.fillRect(100, 40, 120, 140);
+    return autoKeyColor(c, 320, 180);
+  });
+  assert.ok(hex, 'колір знайдено');
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  assert.ok(g > 140 && r < 60, 'знайдено зелений: ' + hex);
+});
+
+await step('хромакей: накладання з вимкненим фоном показує відео під ним, шкіра лишається', async () => {
+  await page.evaluate(() => { document.getElementById('fileInput').dataset.target = 'layer'; });
+  const before = await page.evaluate(() => window.VideoCut.S.project.overlays.length);
+  await page.setInputFiles('#fileInput', green);
+  await page.waitForFunction(n => window.VideoCut?.S.project.overlays.length > n, before, { timeout: 20000 });
+  await page.waitForTimeout(800);
+  const px = async (fx, fy) => page.evaluate(([fx, fy]) => { const c = document.getElementById('pv'), g = c.getContext('2d'); const d = g.getImageData(Math.round(fx * c.width), Math.round(fy * c.height), 1, 1).data; return [d[0], d[1], d[2]]; }, [fx, fy]);
+  const setKey = on => page.evaluate(on => { const V = window.VideoCut, o = V.S.project.overlays.at(-1); o.x = 0; o.y = 0; o.w = 1; o.h = 1; o.shape = 'rect'; o.crop = { x: 0, y: 0, w: 1, h: 1 }; o.start = 0; o.dur = 4; o.key = on ? { on: true, color: '#00b140', tol: 0.22, soft: 0.14, spill: 0.6 } : { on: false }; V.commit(); V.seek(1); }, on);
+  await setKey(false); await page.waitForTimeout(500);
+  const off = await px(0.1, 0.5);
+  assert.ok(off[1] > off[0] + 60 && off[1] > off[2] + 40, 'без ключа видно зелений: ' + off);
+  await setKey(true); await page.waitForTimeout(600);
+  const skin = await px(160 / 640, 180 / 360), red = await px(350 / 640, 130 / 360), bgPix = await px(0.1, 0.5);
+  assert.ok(skin[0] > 190 && skin[1] > 140 && skin[2] > 100 && skin[0] > skin[2] + 40, 'шкіра лишилась: ' + skin);
+  assert.ok(red[0] > 160 && red[1] < 90, 'червоне лишилось: ' + red);
+  assert.ok(!(bgPix[1] > bgPix[0] + 60 && bgPix[1] > bgPix[2] + 40 && bgPix[1] > 140), 'зеленого фону більше немає: ' + bgPix);
+});
+
+await step('хромакей: експорт із накладанням без фону проходить і дає файл', async () => {
+  const size = await page.evaluate(async () => {
+    const res = await window.VideoCut.exportVideo({ format: 'webm', quality: 'low', short: 360, range: [0, 1], fps: 15 });
+    const b = res && (res.blob || res);
+    return b && b.size ? b.size : 0;
+  });
+  assert.ok(size > 1000, 'файл експорту не порожній: ' + size);
 });
 
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));

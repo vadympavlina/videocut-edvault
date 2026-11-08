@@ -951,3 +951,8 @@ kbd{font-family:'IBM Plex Sans',sans-serif}
   body.show-insp .insp{top:auto;max-height:56vh;box-shadow:0 -12px 30px -10px rgba(0,0,0,.35)}
   .vc-logo{display:none}
 }
+
+/* хромакей */
+.key-pick { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.key-color { width: 44px; height: 32px; padding: 2px; border: 1px solid var(--line, #d0d4dc); border-radius: 8px; background: none; cursor: pointer; }
+body.picking-key #pv, body.picking-key #pvLayer { cursor: crosshair !important; }

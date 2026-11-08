@@ -2,10 +2,11 @@
 import { S, media, on, emit, commit, select, findSel, layout, clipAt, outputSize } from './state.js';
 import { textBoxes } from './render.js';
 import { capBox, capStyle } from './cc.js';
-import { isLayer, cropDrag } from './layer.js';
+import { isLayer, cropDrag, visibleCrop } from './layer.js';
+import { sampleHex } from './chroma.js';
 import { addLayerAt, addToTimeline } from './ops.js';
-import { requestDraw } from './player.js';
-import { $, clamp } from './ui.js';
+import { requestDraw, ovFrameNow } from './player.js';
+import { $, clamp, toast } from './ui.js';
 
 let layer, canvas;
 
@@ -137,8 +138,25 @@ function focusScreen(c) {
 
 let drag = null;
 
+// піпетка: колір береться з вихідного кадру накладання під курсором (до ключування)
+function pickKeyAt(e) {
+  const o = S.project.overlays.find(x => x.id === S.pickKey);
+  S.pickKey = null; document.body.classList.remove('picking-key');
+  const f = o && ovFrameNow(o);
+  if (!o || !f || !f.src) { emit('project', { live: true, from: 'insp' }); return; }
+  const { x, y } = norm(e), { W, H } = outputSize();
+  let u = (x - o.x) / o.w, v = (y - o.y) / o.h;
+  if (u < 0 || u > 1 || v < 0 || v > 1) { toast('Клікніть всередині накладання', 'err'); S.pickKey = o.id; document.body.classList.add('picking-key'); return; }
+  if (o.flip) u = 1 - u;
+  const vis = visibleCrop(o, W, H, f.w, f.h);
+  const hx = sampleHex(f.src, (vis.x + u * vis.w) * f.w, (vis.y + v * vis.h) * f.h, 9, 9);
+  if (hx) { o.key = { ...(o.key || {}), color: hx }; commit(); toast('Колір фону: ' + hx); }
+  emit('project', { live: true, from: 'insp' });
+}
+
 function onCanvasDown(e) {
   if (e.button !== 0) return;
+  if (S.pickKey) { e.preventDefault(); pickKeyAt(e); return; }
   const hit = hitTest(e);
   if (hit) {
     select('overlay', hit.id);

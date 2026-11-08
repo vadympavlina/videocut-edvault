@@ -255,6 +255,35 @@ await step('хромакей: накладання з вимкненим фон�
   assert.ok(!(bgPix[1] > bgPix[0] + 60 && bgPix[1] > bgPix[2] + 40 && bgPix[1] > 140), 'зеленого фону більше немає: ' + bgPix);
 });
 
+await step('хромакей: «Чистота фону» прибирає шум на фоні, «Стиснути край» зрізає кайму по контуру', async () => {
+  const r = await page.evaluate(async () => {
+    const { keyFrame, KEY_DEFAULT } = await import('/videocut-app/js/chroma.js');
+    const W = 120, H = 60; let seed = 3; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); const im = g.createImageData(W, H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4, inside = x >= 40 && x < 80 && y >= 10 && y < 50, edge = inside && (x < 43 || x >= 77);
+      // фон із шумом (іноді трохи «брудніший» зелений), людина з тонкою зеленуватою кайминою на краю
+      const n = (rnd() - 0.5) * 30, dirty = rnd() < 0.06 ? 35 : 0;
+      const col = inside ? (edge ? [150 + n, 170, 110 + n] : [215, 160, 125]) : [dirty + n * 0.3, 177 + n, 64 + dirty + n * 0.3];
+      for (let k = 0; k < 3; k++) im.data[i + k] = Math.max(0, Math.min(255, col[k])); im.data[i + 3] = 255;
+    }
+    g.putImageData(im, 0, 0);
+    const alpha = (K, cpu) => { const out = keyFrame(c, W, H, { ...KEY_DEFAULT, on: true, ...K }, false, cpu); const t = document.createElement('canvas'); t.width = W; t.height = H; const x = t.getContext('2d'); x.drawImage(out, 0, 0); return x.getImageData(0, 0, W, H).data; };
+    const leak = d => { let s = 0, tot = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < 30 || x >= 90) { tot++; s += d[(y * W + x) * 4 + 3]; } return s / tot / 255; };
+    const edgeA = d => { let s = 0; for (let y = 15; y < 45; y++) s += d[(y * W + 41) * 4 + 3]; return s / 30; };
+    const out = {};
+    for (const cpu of [false, true]) {
+      const a0 = alpha({ clean: 0, choke: 0 }, cpu), a1 = alpha({ clean: 0.6, choke: 0 }, cpu), a2 = alpha({ clean: 0, choke: 3 }, cpu);
+      out[cpu ? 'cpu' : 'gl'] = { leak0: leak(a0), leak1: leak(a1), edge0: edgeA(a0), edge2: edgeA(a2) };
+    }
+    return out;
+  });
+  for (const [k, v] of Object.entries(r)) {
+    assert.ok(v.leak0 > 0.002 && v.leak1 < v.leak0 * 0.6, `${k}: чистота зменшує шум (${v.leak0} → ${v.leak1})`);
+    assert.ok(v.edge2 <= v.edge0, `${k}: стиснення не збільшує прозорість краю (${v.edge0} → ${v.edge2})`);
+  }
+});
+
 await step('режими накладання: «Світло» прибирає чорне тло футажа, світлі плями лишаються', async () => {
   await page.evaluate(() => { document.getElementById('fileInput').dataset.target = 'layer'; });
   const before = await page.evaluate(() => window.VideoCut.S.project.overlays.length);

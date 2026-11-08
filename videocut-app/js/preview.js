@@ -10,6 +10,11 @@ import { $, clamp, toast } from './ui.js';
 
 let layer, canvas;
 
+// Esc скасовує вибір кольору піпеткою
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.pickKey) { S.pickKey = null; document.body.classList.remove('picking-key'); emit('project', { live: true, from: 'insp' }); toast('Вибір кольору скасовано'); }
+});
+
 export function initPreviewLayer() {
   layer = $('pvLayer'); canvas = $('pv');
   ['select', 'project', 'aspect'].forEach(ev => on(ev, scheduleHandles));

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Відеоредактор · Edvault</title>
+<meta name="theme-color" content="#1c2869">
+<link rel="icon" href="icons/videocut.ico" sizes="32x32">
+<link rel="icon" href="icons/videocut.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/videocut-180.png">
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('edvault-theme') || 'auto';
+      var dark = t === 'dark' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+    // старий редактор реєстрував service worker для FFmpeg — він більше не потрібен
+    if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(function (rs) {
+      rs.forEach(function (r) { var w = r.active || r.waiting || r.installing; if (w && /coi-serviceworker/.test(w.scriptURL)) r.unregister(); });
+    }).catch(function () {});
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- шрифти інтерфейсу лежать поруч; Inter лишається для тексту на самому відео -->
+<link rel="stylesheet" href="fonts/fonts.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- шрифти для субтитрів потрібні не одразу — вантажимо їх у фоні, щоб не гальмувати перший показ -->
+<link rel="stylesheet" media="print" id="ccFontsCss" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;900&family=Rubik:wght@500;800&family=Oswald:wght@500;700&family=Roboto+Slab:wght@500;800&family=Comfortaa:wght@600;700&family=Caveat:wght@600;700&display=swap">
+<script>
+  (function () {
+    var l = document.getElementById('ccFontsCss');
+    function done() { l.media = 'all'; window.__ccFontsReady = true; window.dispatchEvent(new Event('cc-fonts-css')); }
+    if (l.sheet) done(); else { l.addEventListener('load', done); l.addEventListener('error', function () { window.__ccFontsReady = true; window.dispatchEvent(new Event('cc-fonts-css')); }); }
+  })();
+</script>
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="videocut-app/app.css">
+<link rel="modulepreload" href="videocut-app/js/main.js">
+<link rel="modulepreload" href="videocut-app/js/state.js">
+<link rel="modulepreload" href="videocut-app/js/cc.js">
+<link rel="modulepreload" href="videocut-app/js/layer.js">
+<link rel="modulepreload" href="videocut-app/js/cc-panel.js">
+<link rel="modulepreload" href="videocut-app/js/ui.js">
+<link rel="modulepreload" href="videocut-app/js/media.js">
+<link rel="modulepreload" href="videocut-app/js/player.js">
+<link rel="modulepreload" href="videocut-app/js/render.js">
+<link rel="modulepreload" href="videocut-app/js/timeline.js">
+<link rel="modulepreload" href="videocut-app/js/panels.js">
+<link rel="modulepreload" href="videocut-app/js/preview.js">
+<link rel="modulepreload" href="videocut-app/js/ops.js">
+<link rel="modulepreload" href="videocut-app/js/export.js">
+<link rel="modulepreload" href="videocut-app/js/audio.js">
+<link rel="modulepreload" href="videocut-app/js/duck.js">
+<link rel="modulepreload" href="videocut-app/js/db.js">
+<link rel="modulepreload" href="videocut-app/js/srt.js">
+<link rel="modulepreload" href="videocut-app/js/asr.js">
+<link rel="modulepreload" href="videocut-app/vendor/mediabunny.min.mjs">
+<meta name="description" content="Монтаж у браузері: різання, текст, стрілки, розмиття, субтитри, музика й прискорення. Швидкий експорт у MP4.">
+<!-- og -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Edvault">
+<meta property="og:locale" content="uk_UA">
+<meta property="og:title" content="Відеоредактор · Edvault">
+<meta property="og:description" content="Монтаж у браузері: різання, текст, стрілки, розмиття, субтитри, музика й прискорення. Швидкий експорт у MP4.">
+<meta name="twitter:card" content="summary_large_image">
+<!-- /og -->
+</head>
+<body>
+
+<header class="topbar">
+  <img class="vc-logo" src="icons/videocut.svg" alt="">
+  <nav class="menubar" id="menubar" aria-label="Меню"></nav>
+  <div class="grow"></div>
+  <button type="button" class="proj" id="btnProj" data-tip="Параметри проєкту: назва, формат кадру"><span class="brand-proj" id="projName">Новий проєкт</span><span class="save-state" id="saveState"></span></button>
+  <div class="grow"></div>
+  <button class="btn btn-icon btn-sm" id="btnUndo" data-tip="Скасувати" data-key="Ctrl+Z" disabled><span data-icon="undo"></span></button>
+  <button class="btn btn-icon btn-sm" id="btnRedo" data-tip="Повторити" data-key="Ctrl+Shift+Z" disabled><span data-icon="redo"></span></button>
+  <button class="btn btn-icon btn-sm only-narrow" id="btnShowLib" data-tip="Медіа, текст, елементи"><span data-icon="media"></span></button>
+  <button class="btn btn-icon btn-sm only-narrow" id="btnShowInsp" data-tip="Властивості"><span data-icon="gear"></span></button>
+  <button class="btn btn-primary btn-sm" id="btnExport" data-key="Ctrl+E"><span data-icon="download"></span><span class="hide-sm">Експорт</span></button>
+</header>
+
+<div class="work">
+  <aside class="lib">
+    <nav class="lib-tabs" id="libTabs">
+      <button data-tab="media" role="tab"><span data-icon="media"></span>Медіа<i class="tab-n" hidden></i></button>
+      <button data-tab="text" role="tab"><span data-icon="text"></span>Текст<i class="tab-n" hidden></i></button>
+      <button data-tab="elements" role="tab"><span data-icon="shapes"></span>Елементи<i class="tab-n" hidden></i></button>
+      <button data-tab="captions" role="tab"><span data-icon="cc"></span>Субтитри<i class="tab-n" hidden></i></button>
+    </nav>
+    <div class="lib-body" id="libBody"></div>
+  </aside>
+
+  <main class="center">
+    <div class="stage" id="stage">
+      <canvas id="pv"></canvas>
+      <div class="rec-count" id="recCount" hidden></div>
+      <div class="rec-badge" id="recBadge" hidden><i></i><b id="recTime">00:00</b><span>Іде запис</span><button class="btn btn-sm" id="btnRecStop"><span data-icon="stop"></span>Стоп</button></div>
+      <div class="pv-layer" id="pvLayer"></div>
+      <button class="btn btn-icon btn-sm stage-full" id="btnFull" data-tip="На весь екран" data-key="F"><span data-icon="full"></span></button>
+      <div class="stage-empty" id="stageEmpty">
+        <div class="se-ico"><span data-icon="film"></span></div>
+        <h2>Почніть з відео</h2>
+        <p>Перетягніть файл сюди або виберіть його на комп’ютері. Підтримуються MP4, MOV, WebM, AVI, WMV, MPG та інші, а також фото й музика.</p>
+        <button class="btn btn-primary btn-lg" id="btnImport3"><span data-icon="upload"></span>Вибрати файли</button>
+        <ol class="se-steps" aria-label="Як це працює">
+          <li><b>1</b><span>Додайте відео</span></li>
+          <li><b>2</b><span>Змонтуйте: різання, текст, субтитри</span></li>
+          <li><b>3</b><span>Експортуйте в MP4</span></li>
+        </ol>
+      </div>
+    </div>
+  </main>
+
+  <aside class="insp" id="inspector"></aside>
+</div>
+
+<div class="splitter" id="splitter" title="Потягніть, щоб змінити висоту таймлайну"></div>
+
+<section class="tl" id="tl">
+  <div class="tl-bar">
+    <div class="tb-l">
+      <button class="btn btn-sm btn-icon" id="btnSplit" data-tip="Розрізати в позиції курсора" data-key="S"><span data-icon="split"></span></button>
+      <button class="btn btn-sm btn-icon" id="btnDelete" data-tip="Видалити виділене" data-key="Delete"><span data-icon="trash"></span></button>
+      <button class="btn btn-sm btn-cut" id="btnCutRange" data-tip="Вирізати позначений шматок з відео" data-key="X" disabled hidden><span data-icon="scissors"></span><span class="hide-md">Вирізати шматок</span></button>
+    </div>
+    <div class="tb-c">
+      <button class="btn btn-icon btn-sm hide-sm" id="btnStart" data-tip="На початок" data-key="Home"><span data-icon="prev"></span></button>
+      <button class="btn btn-icon btn-sm" id="btnFrameBack" data-tip="Кадр назад" data-key="←"><span data-icon="stepBack"></span></button>
+      <button class="btn btn-play" id="btnPlay" data-tip="Відтворити / пауза" data-key="Пробіл"><span data-icon="play"></span></button>
+      <button class="btn btn-icon btn-sm" id="btnFrameFwd" data-tip="Кадр уперед" data-key="→"><span data-icon="stepFwd"></span></button>
+      <button class="btn btn-icon btn-sm hide-sm" id="btnEnd" data-tip="У кінець" data-key="End"><span data-icon="next"></span></button>
+      <span class="tr-time"><b id="trTime">00:00.0</b><span> / </span><span id="trDur">00:00.0</span></span>
+    </div>
+    <div class="tb-r">
+      <button class="btn btn-sm btn-icon on" id="btnSnapToggle" data-tip="Прилипання до країв елементів" data-key="Alt — тимчасово вимкнути"><span data-icon="magnet"></span></button>
+      <button class="btn btn-sm btn-icon hide-sm" id="btnZoomOut" data-tip="Віддалити" data-key="−"><span data-icon="zoomOut"></span></button>
+      <input type="range" class="hide-sm" id="tlZoom" min="0" max="100" value="50" aria-label="Масштаб таймлайну">
+      <button class="btn btn-sm btn-icon hide-sm" id="btnZoomIn" data-tip="Наблизити" data-key="+"><span data-icon="zoomIn"></span></button>
+      <button class="btn btn-sm btn-icon" id="btnZoomFit" data-tip="Показати все" data-key="Shift+Z"><span data-icon="fit"></span></button>
+    </div>
+  </div>
+  <div class="tl-main">
+    <div class="tl-heads" id="tlHeads"></div>
+    <div class="tl-scroll" id="tlScroll">
+      <div class="tl-inner" id="tlInner">
+        <div class="tl-ruler-wrap"><canvas class="tl-ruler" id="tlRuler"></canvas></div>
+        <div class="tl-lanes" id="tlLanes"></div>
+        <div class="tl-range" id="tlRange" hidden></div>
+        <div class="tl-insert" id="tlInsert" hidden></div>
+        <div class="tl-hover" id="tlHover" hidden><span></span></div>
+        <div class="tl-snap" id="tlSnap" hidden></div>
+        <div class="tl-playhead" id="tlPlayhead"><i></i></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Експорт -->
+<div class="overlay" id="exportModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="exTitle">
+    <div class="modal-head"><h3 id="exTitle">Експорт відео</h3><button class="btn btn-icon" data-close data-tip="Закрити"><span data-icon="x"></span></button></div>
+    <div id="exSetup">
+      <div class="field"><label for="exName">Назва файлу</label><div class="name-row"><input class="input" id="exName" spellcheck="false"><span id="exExt">.mp4</span></div></div>
+      <div class="field"><label>Формат</label><div class="seg seg-wide" id="exFormat">
+        <button data-v="mp4" class="on">MP4<small>відкривається всюди</small></button>
+        <button data-v="webm">WebM<small>для вебу</small></button>
+        <button data-v="audio">Лише звук<small>M4A, для подкасту</small></button>
+      </div></div>
+      <div class="field" id="exResWrap"><label>Якість зображення</label><div class="seg seg-wide" id="exRes">
+        <button data-v="480">480p<small>легкий файл</small></button>
+        <button data-v="720">720p<small>HD</small></button>
+        <button data-v="1080" class="on">1080p<small>Full HD</small></button>
+        <button data-v="1440">1440p<small>2K</small></button>
+      </div></div>
+      <div class="field"><label>Стиснення</label><div class="seg seg-wide" id="exQuality">
+        <button data-v="medium">Менший файл</button>
+        <button data-v="high" class="on">Збалансовано</button>
+        <button data-v="max">Найвища якість</button>
+      </div></div>
+      <div class="field" id="exRangeWrap" hidden><label>Що експортувати</label><div class="seg seg-wide" id="exRange">
+        <button data-v="all" class="on">Увесь проєкт</button>
+        <button data-v="marks">Позначений шматок</button>
+      </div></div>
+      <div class="ex-info" id="exInfo"></div>
+      <div class="modal-actions"><button class="btn btn-outline" data-close>Скасувати</button><button class="btn btn-primary" id="exStart"><span data-icon="download"></span>Експортувати</button></div>
+    </div>
+    <div id="exRun" hidden>
+      <div class="ex-prog"><div class="ex-bar"><i id="exBar"></i></div><div class="ex-row"><b id="exPct">0%</b><span id="exEta">Готуємо…</span></div></div>
+      <p class="hint" id="exRunHint">Не закривайте вкладку, доки триває експорт. Можна перемкнутися на інші вкладки.</p>
+      <div class="modal-actions"><button class="btn btn-outline" id="exCancel">Скасувати експорт</button></div>
+    </div>
+    <div id="exDone" hidden>
+      <div class="ex-done"><div class="ok-ico"><span data-icon="check"></span></div><div><b>Готово!</b><span id="exDoneInfo"></span></div></div>
+      <div class="modal-actions"><button class="btn btn-outline" id="exAgain">Завантажити ще раз</button><button class="btn btn-primary" data-close>Закрити</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Прибрати паузи -->
+<div class="overlay" id="silModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="silTitle">
+    <div class="modal-head"><h3 id="silTitle">Прибрати паузи</h3><button class="btn btn-icon" data-close><span data-icon="x"></span></button></div>
+    <p class="msg">Редактор знайде місця, де ніхто не говорить, і виріже їх. Знайдені паузи підсвічено червоним на таймлайні — перевірте перед тим, як прибирати. Скасувати можна через <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</p>
+    <div class="field"><label>Що вважати тишею</label><div class="seg seg-wide" id="silLevel">
+      <button data-v="soft">Лише повна тиша<small>обережно</small></button>
+      <button data-v="mid" class="on">Тиша й шум<small>рекомендовано</small></button>
+      <button data-v="hard">І тихі звуки<small>агресивно</small></button>
+    </div></div>
+    <div class="field"><label>Найкоротша пауза</label><div class="seg" id="silMin">
+      <button data-v="0.5">0,5 с</button><button data-v="0.8" class="on">0,8 с</button><button data-v="1.5">1,5 с</button><button data-v="3">3 с</button>
+    </div></div>
+    <div class="ex-info" id="silInfo"></div>
+    <div class="modal-actions"><button class="btn btn-outline" data-close>Скасувати</button><button class="btn btn-primary" id="silApply" disabled><span data-icon="scissors"></span>Прибрати</button></div>
+  </div>
+</div>
+
+<!-- Автосубтитри -->
+<div class="overlay" id="asrModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="asrTitle">
+    <div class="modal-head"><h3 id="asrTitle">Субтитри автоматично</h3><button class="btn btn-icon" data-close><span data-icon="x"></span></button></div>
+    <div id="asrSetup">
+      <p class="msg">Редактор сам розпізнає, що говориться, і створить субтитри з часом. Усе працює у вашому браузері — відео нікуди не надсилається. Першого разу завантажиться модель розпізнавання, потім вона береться з пам’яті браузера.</p>
+      <div class="field" style="margin-top:14px"><label>З чого розпізнавати мову</label><div class="src-list" id="asrSources"></div></div>
+      <div class="field"><label>Який відрізок</label><div class="seg seg-wide" id="asrRange">
+        <button data-v="all" class="on">Весь проєкт</button><button data-v="marks">Позначений шматок<small>клавіші I та O</small></button><button data-v="cursor">Від курсора<small>до кінця</small></button>
+      </div></div>
+      <div class="field" id="asrModeWrap" hidden><label>Наявні субтитри</label><div class="seg seg-wide" id="asrMode">
+        <button data-v="replace" class="on">Замінити<small>на цьому відрізку</small></button><button data-v="add">Додати до наявних</button>
+      </div></div>
+      <div class="asr-2">
+        <div class="field"><label>Мова</label><div class="seg seg-wide" id="asrLang">
+          <button data-v="uk" class="on">Українська</button><button data-v="en">Англійська</button><button data-v="auto">Сам визначить</button>
+        </div></div>
+        <div class="field"><label>Точність</label><div class="seg seg-wide" id="asrModel">
+          <button data-v="base" class="on">Швидко<small>≈ 80 МБ</small></button>
+          <button data-v="small">Точніше<small>≈ 250 МБ</small></button>
+        </div></div>
+      </div>
+      <div class="ex-info" id="asrInfo"></div>
+      <div class="modal-actions"><button class="btn btn-outline" data-close>Скасувати</button><button class="btn btn-primary" id="asrStart"><span data-icon="wand"></span>Створити субтитри</button></div>
+    </div>
+    <div id="asrRun" hidden>
+      <div class="ex-prog"><div class="ex-bar"><i id="asrBar"></i></div><div class="ex-row"><b id="asrPct">0%</b><span id="asrStage">Готуємо…</span></div></div>
+      <p class="hint">Можна закрити це вікно й працювати далі — розпізнавання триватиме. Не закривайте вкладку.</p>
+      <div class="modal-actions"><button class="btn btn-outline" id="asrCancel">Скасувати</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Конвертація AVI та інших форматів -->
+<div class="overlay" id="cvModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cvTitle">
+    <div class="modal-head"><h3 id="cvTitle">Перетворюємо відео</h3></div>
+    <p class="msg">Браузер не відкриває <b id="cvName"></b> напряму, тож редактор перетворює його на сумісний формат прямо на вашому комп’ютері — файл нікуди не надсилається.</p>
+    <div class="ex-prog"><div class="ex-bar"><i id="cvBar"></i></div><div class="ex-row"><b id="cvPct">0%</b><span id="cvStage">Готуємо…</span></div></div>
+    <p class="hint">Після перетворення відео відкриється як звичайно. Не закривайте вкладку.</p>
+    <div class="modal-actions"><button class="btn btn-outline" id="cvCancel">Скасувати</button></div>
+  </div>
+</div>
+
+<!-- Озвучення -->
+<div class="overlay" id="voModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="voTitle">
+    <div class="modal-head"><h3 id="voTitle">Озвучити відео</h3><button class="btn btn-icon" data-close><span data-icon="x"></span></button></div>
+    <p class="msg">Запис почнеться з позиції курсора <b id="voFrom">00:00</b>. Після відліку 3-2-1 відео гратиме, а ви коментуєте. Натисніть «Стоп» або пробіл, щоб завершити — голос з’явиться на звуковій доріжці.</p>
+    <label class="check"><input type="checkbox" id="voMute" checked> Вимкнути звук відео під час запису <small>— щоб він не потрапив у мікрофон, якщо ви без навушників</small></label>
+    <div class="ex-info" id="voInfo">Браузер попросить дозвіл на мікрофон.</div>
+    <div class="modal-actions"><button class="btn btn-outline" data-close>Скасувати</button><button class="btn btn-primary btn-rec-solid" id="voStart"><span data-icon="mic"></span>Почати запис</button></div>
+  </div>
+</div>
+
+<!-- Довідка -->
+<div class="overlay" id="helpModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+    <div class="modal-head"><h3 id="helpTitle">Гарячі клавіші</h3><button class="btn btn-icon" data-close><span data-icon="x"></span></button></div>
+    <div class="kgrid">
+      <span class="grp">Меню й файли</span>
+      <span>Відкрити меню (далі — стрілки, Enter, Esc)</span><span><kbd>F10</kbd></span>
+      <span>Додати файли</span><span><kbd>Ctrl</kbd> <kbd>O</kbd></span>
+      <span class="grp">Відтворення</span>
+      <span>Відтворити / пауза</span><span><kbd>Пробіл</kbd> <kbd>K</kbd></span>
+      <span>Назад / вперед на 5 с</span><span><kbd>J</kbd> <kbd>L</kbd></span>
+      <span>Кадр назад / вперед (з Shift — 1 с)</span><span><kbd>←</kbd> <kbd>→</kbd></span>
+      <span>До попередньої / наступної точки монтажу</span><span><kbd>↑</kbd> <kbd>↓</kbd></span>
+      <span>На початок / у кінець</span><span><kbd>Home</kbd> <kbd>End</kbd></span>
+      <span>На весь екран</span><span><kbd>F</kbd></span>
+      <span class="grp">Монтаж</span>
+      <span>Розрізати в позиції курсора</span><span><kbd>S</kbd></span>
+      <span>Видалити виділене (решта зсувається)</span><span><kbd>Delete</kbd></span>
+      <span>Початок / кінець шматка</span><span><kbd>I</kbd> <kbd>O</kbd></span>
+      <span>Вирізати позначений шматок</span><span><kbd>X</kbd></span>
+      <span>Копіювати / вирізати / вставити</span><span><kbd>Ctrl</kbd> <kbd>C</kbd> · <kbd>X</kbd> · <kbd>V</kbd></span>
+      <span>Дублювати</span><span><kbd>Ctrl</kbd> <kbd>D</kbd></span>
+      <span>Тимчасово вимкнути прилипання</span><span><kbd>Alt</kbd> + перетягування</span>
+      <span>Переходити між елементами таймлайну</span><span><kbd>Tab</kbd> · потім <kbd>↑</kbd> <kbd>↓</kbd></span>
+      <span>Меню дій над елементом</span><span>права кнопка миші</span>
+      <span>Скасувати / повторити</span><span><kbd>Ctrl</kbd> <kbd>Z</kbd> · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></span>
+      <span>Додати текст / субтитр</span><span><kbd>T</kbd> <kbd>C</kbd></span>
+      <span>Записати голос / зупинити запис</span><span><kbd>R</kbd> · <kbd>Пробіл</kbd></span>
+      <span>Зняти виділення</span><span><kbd>Esc</kbd></span>
+      <span class="grp">Таймлайн</span>
+      <span>Наблизити / віддалити</span><span><kbd>+</kbd> <kbd>−</kbd> або <kbd>Ctrl</kbd> + коліщатко</span>
+      <span>Показати все</span><span><kbd>Shift</kbd> <kbd>Z</kbd></span>
+      <span>Експорт</span><span><kbd>Ctrl</kbd> <kbd>E</kbd></span>
+    </div>
+  </div>
+</div>
+
+<!-- Підтвердження -->
+<div class="overlay" id="confirmModal">
+  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal-head"><h3 id="confirmTitle">Підтвердження</h3></div>
+    <p class="msg" id="confirmMsg"></p>
+    <div class="modal-actions"><button class="btn btn-outline" id="confirmNo">Скасувати</button><button class="btn btn-danger-solid" id="confirmYes">Так</button></div>
+  </div>
+</div>
+
+<div class="drop-hint" id="dropHint"><div><span data-icon="upload"></span>Відпустіть, щоб додати файли</div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="tip"></div>
+<div id="mediaPool" aria-hidden="true"></div>
+<div id="menuCmds" hidden>
+  <button id="btnImport"></button><button id="btnNew"></button><button id="btnHelp"></button><button id="btnTheme"></button>
+  <button id="btnMarkIn"></button><button id="btnMarkOut"></button><button id="btnSilences"></button>
+  <button id="btnVoice"></button><button id="btnSnap"></button>
+</div>
+<input type="file" id="fileInput" accept="video/*,audio/*,image/*,.mkv,.mov,.qt,.hevc,.avi,.wmv,.asf,.flv,.f4v,.mpg,.mpeg,.vob,.3gp,.3g2,.mts,.m2ts,.divx,.ogv,.dv,.rm,.rmvb,.mxf" multiple hidden>
+<input type="file" id="projInput" accept=".evproj" hidden>
+<input type="file" id="capInput" accept=".srt,.vtt,text/vtt,application/x-subrip" hidden>
+
+<noscript><p style="padding:20px">Для роботи редактора потрібен JavaScript.</p></noscript>
+<script type="module" src="videocut-app/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "videocut-edvault",
+  "private": true,
+  "description": "Відеоредактор Edvault: різання, текст, субтитри, музика, експорт у MP4. Статична сторінка, без збирання.",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:e2e": "node tests/videocut-e2e.mjs"
+  }
+}

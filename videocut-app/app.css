@@ -1172,3 +1172,13 @@ details.lfold[open]>summary::after{transform:rotate(45deg)}
 .mrow .mact{position:absolute;right:40px;top:50%;transform:translateY(-50%);margin:0;grid-column:auto}
 .mrow:hover .minfo,.mrow:focus-within .minfo{padding-right:60px}
 .mrow .mact .btn:focus-visible,.mrow .mquick:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* Ключові кадри */
+.kfbar{display:flex;gap:6px;align-items:center}
+.kfbar .btn:first-child{flex:1}
+.kfbar .ico{width:12px;height:12px;margin-right:6px;fill:currentColor}
+.kflist{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
+.kf-chip{padding:3px 9px;border-radius:99px;border:1px solid var(--border2);background:var(--surface2);color:var(--text2);font-size:12px;font-variant-numeric:tabular-nums}
+.kf-chip:hover{border-color:var(--accent)}
+.kf-chip.on{background:var(--accent-light);border-color:var(--accent);color:var(--text)}
+.it .kfm{position:absolute;bottom:3px;width:8px;height:8px;margin-left:-4px;background:var(--marker);transform:rotate(45deg);border:1px solid rgba(0,0,0,.55);pointer-events:none;z-index:3}

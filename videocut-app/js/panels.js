@@ -4,6 +4,7 @@ import { MOTIONS, textBoxes, LOOKS, lookFilter, applyLookOverlay, FILTERS_OK, TR
 import { addToTimeline, addOverlay, addLayerAt, TEXT_PRESETS, splitAt, duplicateSel, deleteSel, copySel, moveZ, addCaption, setCaptions, trimMusicToVideo, CARD_STYLES, addTitleCard, normalizeSel, transitionsAll, freezeFrame } from './ops.js';
 import { removeMedia, thumbAt } from './media.js';
 import { seek } from './player.js';
+import { hasKf, keyHere, setKeyHere, removeKeyHere, autoKey, syncBase, localTime, itemLength } from './kf.js';
 import { parseSubtitles } from './srt.js';
 import { renderCapTab, markActiveCaption, capTabClick, capTabInput, capTabChange, capTabToggle, captionInspector, ccAction, speedHtml } from './cc-panel.js';
 import { KEY_DEFAULT } from './chroma.js';
@@ -64,6 +65,8 @@ export function initLibrary() {
   });
   on('select', () => { if (tab === 'captions') markActiveCaption(); });
   on('time', () => { if (tab === 'captions') markActiveCaption(); });
+  let kfT = 0;
+  on('time', () => { const o = findSel(); if (!o || !hasKf(o) || kfT) return; kfT = setTimeout(() => { kfT = 0; const s = findSel(); if (s && hasKf(s) && !typingIn($('inspector'))) { syncBase(kindOfSel(), s); renderInspector(); } }, 120); });
   renderLibrary();
 }
 export function showTab(t) { tab = t; renderLibrary(); }
@@ -295,6 +298,16 @@ const fold = (key, label, val, build) => `<details class="fold" data-more="${key
 const more = (key, html) => `<details class="more" data-more="${key}" ${openMore.has(key) ? 'open' : ''}><summary>Точніше</summary><div class="more-body">${html}</div></details>`;
 
 // розділ: назва й кнопка «Скинути» (ключі:значення через кому; 'del' — прибрати поле)
+// Ключові кадри: рух, положення й масштаб у часі
+const kindOfSel = () => (S.sel && S.sel.kind === 'clip' ? 'clip' : 'overlay');
+function motionSec(kind, o) {
+  const has = hasKf(o), here = keyHere(kind, o), len = itemLength(kind, o);
+  const list = has ? o.kf.map(k => `<button type="button" class="kf-chip${here === k ? ' on' : ''}" data-a="kfGo" data-v="${k.t}" data-tip="Перейти до ключового кадру">${fmt(k.t, true)}</button>`).join('') : '';
+  return sec('Рух у часі', `<p class="hint">${has ? 'Змініть положення чи масштаб у іншому місці кліпа, і кадр запишеться сам. Між ключовими кадрами рух плавний.' : 'Поставте ключовий кадр, перейдіть далі за часом і змініть положення чи масштаб. Рух виникне сам.'}</p>
+    <div class="kfbar"><button type="button" class="btn btn-sm ${here ? 'btn-outline' : 'btn-primary'}" data-a="kfAdd">${icon('kf')}${here ? 'Прибрати кадр тут' : 'Ключовий кадр тут'}</button>
+    ${has ? `<button type="button" class="btn btn-sm btn-icon" data-a="kfStep" data-v="-1" data-tip="Попередній ключовий кадр" aria-label="Попередній ключовий кадр">${icon('chevL')}</button><button type="button" class="btn btn-sm btn-icon" data-a="kfStep" data-v="1" data-tip="Наступний ключовий кадр" aria-label="Наступний ключовий кадр">${icon('chevR')}</button>` : ''}</div>
+    ${has ? `<div class="kflist">${list}</div><div class="iaction"><button type="button" class="btn btn-outline btn-sm btn-block" data-a="kfClear">Прибрати весь рух</button></div>` : ''}`);
+}
 const sec = (title, html, reset = '') => `<section class="isec"><h2 class="isec-h"><span>${title}</span>${reset ? `<button type="button" class="reset" data-a="reset" data-v="${reset}" data-tip="Повернути типові значення" aria-label="Скинути розділ «${title}»">Скинути</button>` : ''}</h2>${html}</section>`;
 
 // вкладки: вміст будується лише для відкритої, пам'ятаємо вибір для кожного типу елемента
@@ -383,7 +396,7 @@ function clipPanel(c) {
   const otherShape = m && Math.abs(mw / mh - W / H) > 0.02;
   const speedHint = sp === 1 ? '' : sp > 1 ? 'Голос залишиться природним, без «мультяшного» ефекту.' : 'Уповільнення зручне, щоб показати швидкі дії.';
   const frame = () => sec('Масштаб і положення', `${range('zoom', 'Наближення', 1, 4, 0.05, z, '×', z.toFixed(2).replace('.', ',') + '×')}
-      ${z > 1.001 ? '<p class="hint">Перетягніть хрестик на перегляді туди, що треба показати ближче.</p>' : ''}`, 'zoom:1,zx:0.5,zy:0.5') +
+      ${z > 1.001 ? '<p class="hint">Перетягніть хрестик на перегляді туди, що треба показати ближче.</p>' : ''}`, 'zoom:1,zx:0.5,zy:0.5') + motionSec('clip', c) +
     sec('Поворот і дзеркало', `<div class="prow stack"><div class="seg"><button data-a="rot" data-v="-90" aria-label="Повернути вліво">${icon('rotL')}</button><button data-a="rot" data-v="90" aria-label="Повернути вправо">${icon('rotR')}</button><button data-a="flip" class="${c.flip ? 'on' : ''}" aria-label="Дзеркало">${icon('flipH')}</button></div></div>
       <p class="hint">Для відео з телефона, знятого боком.</p>`, 'rot:0,flip:false') +
     sec('Поля кадру', seg('fit', 'Чим заповнити', [['blur', 'Розмиті'], ['contain', 'Чорні'], ['cover', 'Обрізати']], c.fit || 'contain', otherShape ? 'Форма відео відрізняється від кадру проєкту.' : ''), 'fit:blur') +
@@ -466,7 +479,7 @@ function layerPanel(o) {
       ${['full', 'left', 'right', 'top', 'bottom'].includes(lo) ? '' : `<div class="prow wide"><label>Кут</label><div class="corner-grid">${[['tl', '↖', 'угорі ліворуч'], ['tr', '↗', 'угорі праворуч'], ['bl', '↙', 'внизу ліворуч'], ['br', '↘', 'внизу праворуч']].map(([v, n, t]) => `<button data-a="pipCorner" data-v="${v}" aria-label="${t}">${n}</button>`).join('')}</div></div>`}
       <div class="prow"><label>Розмір</label><input type="range" data-l="scale" min="0.08" max="1" step="0.01" value="${Math.min(1, o.w)}" aria-label="Розмір"><span class="aux" data-show="scale">${Math.round(o.w * 100)}%</span></div>
       <p class="hint">Або перетягніть на перегляді. Кути змінюють розмір, бокові маркери обрізають.</p>`) +
-    sec('Обрізка країв', `${cropR('l', 'Зліва')}${cropR('r', 'Справа')}${cropR('t', 'Зверху')}${cropR('b', 'Знизу')}`, cropped ? 'crop:del' : '') ;
+    sec('Обрізка країв', `${cropR('l', 'Зліва')}${cropR('r', 'Справа')}${cropR('t', 'Зверху')}${cropR('b', 'Знизу')}`, cropped ? 'crop:del' : '') + motionSec('overlay', o);
   const view = () => sec('Форма', seg('shape', 'Форма', [['rect', 'Прямокутник'], ['round', 'Заокруглена'], ['circle', 'Коло']], shape)) +
     sec('Накладання', `${seg('blend', 'Режим', Object.entries(BLENDS), o.blend || 'normal', blendOf(o) ? 'Чорне тло футажа зникає, лишаються світлі частини.' : '')}
       ${range('opacity', 'Непрозорість', 0.1, 1, 0.01, o.opacity ?? 1, '%', Math.round((o.opacity ?? 1) * 100) + '%', true)}`, 'opacity:1,blend:normal') +
@@ -541,7 +554,7 @@ function overlayPanel(o) {
   }
   const tabs = [];
   if (text) tabs.push(['text', 'Текст', text]);
-  tabs.push(['look', 'Вигляд', look], ['time', 'Час', () => timing(o) + `<div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="front">${icon('front')}Перенести наперед</button></div>`]);
+  tabs.push(['look', 'Вигляд', look], ['time', 'Час', () => timing(o) + motionSec('overlay', o) + `<div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="front">${icon('front')}Перенести наперед</button></div>`]);
   return head(OV_ICONS[o.type], OV_NAMES[o.type], `${fmt(o.start, true)} – ${fmt(o.start + o.dur, true)}`) +
     actions(act('dup', 'copy', 'Дублювати'), act('del', 'trash', 'Видалити', 'data-danger="1"')) +
     tabbed('ov-' + o.type, tabs);
@@ -606,6 +619,7 @@ function onInput(e) {
     const v = +t.value;
     if (t.dataset.l === 'scale') setScale(o, v);
     else setCropSide(o, t.dataset.side, v);
+    if (t.dataset.l === 'scale') autoKey('overlay', o);
     const sh = box().querySelector(`[data-show="${t.dataset.l === 'scale' ? 'scale' : 'crop-' + t.dataset.side}"]`);
     if (sh) sh.textContent = Math.round(v * 100) + '%';
     emit('project', { live: true, from: 'insp' });
@@ -617,6 +631,7 @@ function onInput(e) {
     let v = t.type === 'checkbox' ? t.checked : t.type === 'range' ? +t.value : t.value;
     if (f.includes('.')) { const [a, b] = f.split('.'); o[a] = { ...(o[a] || {}), [b]: v }; }
     else o[f] = v;
+    if (S.sel && (S.sel.kind === 'clip' || S.sel.kind === 'overlay')) autoKey(kindOfSel(), o);
     const show = box().querySelector(`[data-show="${f}"]`);
     if (show) show.textContent = t.dataset.pct ? Math.round(v * 100) + '%' : t.dataset.unit === '%' ? Math.round(v * 100) + '%' : t.dataset.unit === '×' ? v.toFixed(2).replace('.', ',') + '×' : String(v).replace('.', ',') + (t.dataset.unit || '');
     if (S.sel.kind === 'caption') { const sp = box().querySelector('[data-cc-speed]'); if (sp) sp.innerHTML = speedHtml(o); }
@@ -712,6 +727,18 @@ function onClick(e) {
         if (k === 'rot' || k === 'fit') aspect = true;
       }
       commit(); if (aspect) emit('aspect'); renderInspector();
+    } break;
+    case 'kfAdd': if (o) {
+      const kind = kindOfSel();
+      if (keyHere(kind, o)) { removeKeyHere(kind, o); commit('Прибрано ключовий кадр'); } else { setKeyHere(kind, o); commit('Ключовий кадр'); }
+      emit('project', { from: 'insp' }); renderInspector();
+    } break;
+    case 'kfClear': if (o) { delete o.kf; commit('Прибрано рух'); emit('project', { from: 'insp' }); renderInspector(); } break;
+    case 'kfGo': if (o) { const kind = kindOfSel(); const l = kind === 'clip' ? layout().find(x => x.clip.id === o.id) : null; seek((kind === 'clip' ? (l ? l.start : 0) : o.start) + (+b.dataset.v)); } break;
+    case 'kfStep': if (o && hasKf(o)) {
+      const kind = kindOfSel(), cur = localTime(kind, o), dir = +b.dataset.v;
+      const k = dir > 0 ? o.kf.find(x => x.t > cur + 0.03) : [...o.kf].reverse().find(x => x.t < cur - 0.03);
+      if (k) { const l = kind === 'clip' ? layout().find(x => x.clip.id === o.id) : null; seek((kind === 'clip' ? (l ? l.start : 0) : o.start) + k.t); }
     } break;
     case 'closeProject': showProject(false); break;
     case 'split': splitAt(); break;

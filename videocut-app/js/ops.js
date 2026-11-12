@@ -1,4 +1,5 @@
 // Операції редагування — кожна змінює проєкт і записує крок в історію.
+import { splitKf } from './kf.js';
 import { S, media, uid, emit, layout, clipAt, srcTime, clipDur, musicDur, mainEnd, duration, commit, select, selectMany, findSel, rippleShift, outputSize, ASPECTS, laneOf, laneLocked } from './state.js';
 import { applyLayout } from './layer.js';
 import { seek } from './player.js';
@@ -49,6 +50,7 @@ function splitList(list, id, t) {
   const b = { ...structuredClone(o), id: uid(o.id[0]), start: t, dur: o.start + o.dur - t };
   if (o.type === 'video') b.in = (o.in || 0) + (t - o.start); // друга половина відео продовжується з того ж місця
   o.dur = t - o.start;
+  splitKf('overlay', o, b, t - o.start);
   list.splice(i + 1, 0, b);
   return b;
 }
@@ -72,6 +74,7 @@ export function splitAt(t = S.t) {
   const b = { ...structuredClone(c), id: uid('c'), in: st, fadeIn: 0 };
   delete b.tr; // розріз — без переходу
   c.out = st; c.fadeOut = 0;
+  splitKf('clip', c, b, t - l.start);
   p.clips.splice(p.clips.indexOf(c) + 1, 0, b);
   commit();
   emit('did-cut');

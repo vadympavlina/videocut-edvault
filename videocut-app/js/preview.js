@@ -5,6 +5,7 @@ import { capBox, capStyle } from './cc.js';
 import { isLayer, cropDrag, visibleCrop } from './layer.js';
 import { sampleHex } from './chroma.js';
 import { addLayerAt, addToTimeline } from './ops.js';
+import { resolveKf, hasKf, syncBase, autoKey } from './kf.js';
 import { requestDraw, ovFrameNow } from './player.js';
 import { $, clamp, toast } from './ui.js';
 
@@ -58,13 +59,13 @@ export function initPreviewLayer() {
     const c = l.clip; select('clip', c.id);
     c.zoom = clamp(Math.round(((c.zoom || 1) + (e.deltaY < 0 ? 0.1 : -0.1)) * 20) / 20, 1, 4);
     if (c.zoom <= 1.001) { c.zoom = 1; c.zx = 0.5; c.zy = 0.5; }
-    emit('project', { live: true, from: 'insp' }); requestDraw();
+    autoKey('clip', c); emit('project', { live: true, from: 'insp' }); requestDraw();
     clearTimeout(wheelT); wheelT = setTimeout(() => { commit('Масштаб кадру'); emit('project', { from: 'insp' }); }, 350);
   }, { passive: false });
 }
 
 const visible = o => S.t >= o.start && S.t < o.start + o.dur;
-const boxOf = o => ({ x: o.x, y: o.y, w: o.w, h: o.type === 'text' ? (textBoxes.get(o) || 0.1) : o.h });
+const boxOf = o => { const r = hasKf(o) ? resolveKf('overlay', o, S.t - o.start) : o; return { x: r.x, y: r.y, w: r.w, h: o.type === 'text' ? (textBoxes.get(o) || 0.1) : r.h }; };
 
 function norm(e) {
   const r = canvas.getBoundingClientRect();
@@ -122,6 +123,7 @@ function renderHandles() {
     if (gd) Object.assign(gd.style, { left: canvas.offsetLeft + 'px', top: canvas.offsetTop + 'px', width: canvas.offsetWidth + 'px', height: canvas.offsetHeight + 'px' });
   }
   const o = findSel();
+  if (o && S.sel.kind === 'overlay') syncBase('overlay', o); else if (o && S.sel.kind === 'clip') syncBase('clip', o);
   let html = '';
   if (o && S.sel.kind === 'overlay' && visible(o)) {
     if (o.type === 'arrow') {
@@ -209,6 +211,7 @@ function onHandleDown(e) {
 }
 
 function startDrag(e, mode, o) {
+  syncBase(S.sel.kind === 'clip' ? 'clip' : 'overlay', o);
   const p = norm(e);
   drag = { mode, id: o.id, kind: S.sel.kind, sx: p.x, sy: p.y, o0: structuredClone(o), cy0: capStyle(S.project).y, h0: o.type === 'text' ? (textBoxes.get(o) || 0.1) : o.h, moved: false };
   const el = e.currentTarget;
@@ -270,6 +273,7 @@ function onMove(e) {
   } else if (drag.mode === 'p1') { o.x = p.x; o.y = p.y; o.w = a.x + a.w - p.x; o.h = a.y + a.h - p.y; }
   else if (drag.mode === 'p2') { o.w = p.x - a.x; o.h = p.y - a.y; }
   else resize(o, a, drag.mode, dx, dy);
+  if (S.sel && (S.sel.kind === 'overlay' || S.sel.kind === 'clip')) autoKey(S.sel.kind, o);
   emit('project', { live: true });
   requestDraw();
 }

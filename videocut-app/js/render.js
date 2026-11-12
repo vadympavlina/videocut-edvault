@@ -1,4 +1,5 @@
 // Малювання кадру сцени — однаково для перегляду й експорту.
+import { resolveKf, hasKf } from './kf.js';
 // provider(layoutItem, sourceTime) → {src: CanvasImageSource | VideoSample, w, h} | null
 import { S, media, layout, clipAt, srcTime, laneVisible } from './state.js';
 import { capStyle, drawCaption, capState, capBox } from './cc.js';
@@ -330,7 +331,7 @@ function drawFitted(ctx, c, f, W, H, prog = 0) {
   applyLookOverlay(ctx, c, W, H);
 }
 export function drawClipFrame(ctx, l, f, W, H, t) {
-  const c = l.clip;
+  const c = resolveKf('clip', l.clip, t - l.start);
   drawFitted(ctx, c, f, W, H, (t - l.start) / Math.max(0.01, l.end - l.start));
   const a = 1 - fadeAlpha(t, l.start, l.end - l.start, c.fadeIn || 0, c.fadeOut || 0);
   if (a > 0.001) { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0, 0, W, H); }
@@ -358,7 +359,8 @@ export function renderScene(ctx, W, H, t, provider, L = layout(), opts = {}) {
     if (t < o.start || t >= o.start + o.dur) continue;
     if (!laneVisible(isLayer(o) ? 'v2' : 'ov')) continue;
     const frame = o.type === 'video' && opts.ovFrame ? opts.ovFrame(o, (o.in || 0) + (t - o.start)) : null;
-    drawAnimated(ctx, o, W, H, k, t, opts.editing, frame);
+    if (hasKf(o)) { const r = resolveKf('overlay', o, t - o.start); drawAnimated(ctx, r, W, H, k, t, opts.editing, frame); const tb = textBoxes.get(r); if (tb != null) textBoxes.set(o, tb); }
+    else drawAnimated(ctx, o, W, H, k, t, opts.editing, frame);
   }
   capBox.id = null;
   const cap = laneVisible('cc') ? p.captions.find(c => t >= c.start && t < c.start + c.dur) : null;
@@ -441,6 +443,7 @@ export function staticKey(t, L) {
     const c = l.clip, m = media.get(c.mediaId);
     if (!m || m.kind !== 'image') return null;
     if (c.motion && c.motion !== 'none') return null;
+    if (hasKf(c) && c.kf.length > 1) return null;
     if ((c.fadeIn || 0) > 0 && t < l.start + c.fadeIn + 0.02) return null;
     if ((c.fadeOut || 0) > 0 && t > l.end - c.fadeOut - 0.02) return null;
     if (c.tr && L.indexOf(l) > 0 && t < l.start + (c.tr.d || 0.6) + 0.02) return null;
@@ -449,7 +452,7 @@ export function staticKey(t, L) {
   for (const o of p.overlays) {
     if (t < o.start || t >= o.start + o.dur) continue;
     if (!laneVisible(isLayer(o) ? 'v2' : 'ov')) continue;
-    if (o.type === 'video' || o.type === 'progress') return null;
+    if (o.type === 'video' || o.type === 'progress' || (hasKf(o) && o.kf.length > 1)) return null;
     const anim = animOf(o);
     if (anim !== 'none') {
       const inD = anim === 'type' ? 2.3 : Math.min(0.5, o.dur / 3), outD = Math.min(0.35, o.dur / 4);

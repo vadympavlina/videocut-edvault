@@ -137,6 +137,9 @@ export function toggleTrack(k, a) {
   return s[a];
 }
 
+// Ромбики ключових кадрів на елементі
+const kfMarks = (o, len) => (o.kf && o.kf.length && len > 0 ? o.kf.map(k => `<i class="kfm" style="left:${Math.max(0, Math.min(100, k.t / len * 100))}%"></i>`).join('') : '');
+
 // ── зум ──
 const ZMIN = 2, ZMAX = 400;
 const sliderFromZoom = z => Math.round(100 * Math.log(z / ZMIN) / Math.log(ZMAX / ZMIN));
@@ -226,12 +229,12 @@ export function render() {
     if (o.shape === 'circle') badges.push('коло');
     if ((o.opacity ?? 1) < 0.99) badges.push(Math.round((o.opacity ?? 1) * 100) + '%');
     if (o.type === 'video' && o.muted) badges.push('без звуку');
-    return `<div class="it lay${o.type === 'image' ? ' lay-img' : ''}${selCls('overlay', o.id)}${m ? '' : ' missing'}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + (v2RowOf.get(o.id) || 0) * V2_H}px;height:${V2_H - 6}px"><span class="lbl">${esc(m ? m.name : 'Файл відсутній')}${badges.length ? ' · ' + badges.join(' · ') : ''}</span>${hnd}</div>`;
+    return `<div class="it lay${o.type === 'image' ? ' lay-img' : ''}${selCls('overlay', o.id)}${m ? '' : ' missing'}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + (v2RowOf.get(o.id) || 0) * V2_H}px;height:${V2_H - 6}px"><span class="lbl">${esc(m ? m.name : 'Файл відсутній')}${badges.length ? ' · ' + badges.join(' · ') : ''}</span>${kfMarks(o, o.dur)}${hnd}</div>`;
   }).join('');
 
   const ov = graphics.map(o => {
     const label = o.type === 'text' ? (o.text || '').split('\n')[0] : o.type === 'emoji' ? (o.emoji || '') + ' ' + OV_LABEL.emoji : OV_LABEL[o.type];
-    return `<div class="it ov ov-${o.type}${selCls('overlay', o.id)}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + rowOf.get(o.id) * ROW}px;height:${ROW - 4}px">${icon(OV_ICON[o.type] || 'shapes')}<span>${esc(label)}</span>${hnd}</div>`;
+    return `<div class="it ov ov-${o.type}${selCls('overlay', o.id)}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + rowOf.get(o.id) * ROW}px;height:${ROW - 4}px">${icon(OV_ICON[o.type] || 'shapes')}<span>${esc(label)}</span>${kfMarks(o, o.dur)}${hnd}</div>`;
   }).join('');
   const cc = p.captions.map(c => `<div class="it cc${selCls('caption', c.id)}" data-kind="caption" data-id="${c.id}" style="left:${c.start * pps}px;width:${Math.max(4, c.dur * pps)}px;height:${CC_H - 4}px"><span>${esc(c.text)}</span>${hnd}</div>`).join('');
   const clips = layout().map((l, idx) => {
@@ -244,7 +247,7 @@ export function render() {
     const fi = c.fadeIn ? `<b class="fade fi" style="width:${Math.min(c.fadeIn * pps, (l.end - l.start) * pps / 2)}px"></b>` : '';
     const fo = c.fadeOut ? `<b class="fade fo" style="width:${Math.min(c.fadeOut * pps, (l.end - l.start) * pps / 2)}px"></b>` : '';
     const trm = c.tr && idx > 0 ? `<b class="tr-zone" style="width:${Math.min((c.tr.d || 0.6) * pps, (l.end - l.start) * pps)}px" title="Перехід: ${TR_NAMES[c.tr.type] || ''}"></b>` : '';
-    return `<div class="it clip${selCls('clip', c.id)}${m ? '' : ' missing'}" data-kind="clip" data-id="${c.id}" style="left:${l.start * pps}px;width:${Math.max(4, (l.end - l.start) * pps)}px;height:${V_H - 6}px">${fi}${fo}${trm}<span class="lbl">${esc(m ? m.name : 'Файл відсутній')}${badges.length ? ' · ' + badges.join(' · ') : ''}</span>${hnd}</div>`;
+    return `<div class="it clip${selCls('clip', c.id)}${m ? '' : ' missing'}" data-kind="clip" data-id="${c.id}" style="left:${l.start * pps}px;width:${Math.max(4, (l.end - l.start) * pps)}px;height:${V_H - 6}px">${fi}${fo}${trm}<span class="lbl">${esc(m ? m.name : 'Файл відсутній')}${badges.length ? ' · ' + badges.join(' · ') : ''}</span>${kfMarks(c, l.end - l.start)}${hnd}</div>`;
   }).join('');
   const mr = assignRows(p.music.map(x => ({ id: x.id, start: x.start, dur: musicDur(x), row: x.row })));
   muRows = mr.n + (dragRows === 'a' ? 1 : 0); muRowOf = mr.rowOf;

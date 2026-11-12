@@ -890,6 +890,36 @@ await step('ліва панель: пошук у «Тексті» й «Елем�
   await p23.close(); assert.deepEqual(errs, []);
 });
 
+await step('ключові кадри: ставляться з панелі, правка в іншому місці пише новий кадр, рух плавний, ромбики на таймлайні, розріз ділить кадри, скасування працює', async () => {
+  const p24 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
+  p24.on('pageerror', e => errs.push(e.message));
+  await p24.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p24.goto(`http://localhost:${port}/index.html`); await p24.waitForFunction(() => window.VideoCut);
+  await p24.setInputFiles('#fileInput', video); await p24.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p24.waitForTimeout(900);
+  await p24.evaluate(() => window.VideoCut.seek(0.5));
+  await p24.locator('.tl-lanes .clip').first().click();
+  await p24.click('[data-a="kfAdd"]');
+  assert.equal(await p24.evaluate(() => (window.VideoCut.S.project.clips[0].kf || []).length), 1, 'перший ключовий кадр');
+  await p24.evaluate(() => window.VideoCut.seek(4.5)); await p24.waitForTimeout(400);
+  await p24.evaluate(() => { const e = document.querySelector('#inspector input[data-f="zoom"]'); e.value = 2; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); });
+  const kf = await p24.evaluate(() => window.VideoCut.S.project.clips[0].kf);
+  assert.equal(kf.length, 2, 'правка в іншому місці створила кадр: ' + JSON.stringify(kf));
+  assert.ok(kf[0].zoom <= 1.001 && kf[1].zoom >= 1.99, 'масштаб 1 -> 2');
+  const mid = await p24.evaluate(async () => { const { kfAt } = await import('./videocut-app/js/kf.js'); const c = window.VideoCut.S.project.clips[0]; return kfAt(c.kf, (c.kf[0].t + c.kf[1].t) / 2, ['zoom']).zoom; });
+  assert.ok(mid > 1.3 && mid < 1.7, 'посередині масштаб проміжний: ' + mid);
+  assert.ok(await p24.locator('.it.clip .kfm').count() >= 2, 'ромбики на кліпі');
+  await p24.evaluate(() => window.VideoCut.seek(2.5)); await p24.waitForTimeout(300);
+  await p24.keyboard.press('KeyS'); await p24.waitForTimeout(300);
+  const parts = await p24.evaluate(() => window.VideoCut.S.project.clips.map(c => (c.kf || []).map(k => +k.t.toFixed(2))));
+  assert.equal(parts.length, 2, 'розрізано'); assert.ok(parts[0].length >= 2 && parts[1].length >= 2 && parts[1][0] === 0, 'кадри розділено між половинами: ' + JSON.stringify(parts));
+  await p24.keyboard.press('Control+z'); await p24.waitForTimeout(200);
+  assert.equal(await p24.evaluate(() => window.VideoCut.S.project.clips.length), 1, 'скасування розрізу');
+  await p24.locator('.tl-lanes .clip').first().click(); await p24.waitForTimeout(200);
+  await p24.click('[data-a="kfClear"]');
+  assert.equal(await p24.evaluate(() => window.VideoCut.S.project.clips[0].kf), undefined, 'рух прибрано');
+  await p24.close(); assert.deepEqual(errs, []);
+});
+
 await step('політика безпеки (CSP) не блокує сторінку: жодних порушень під час запуску й роботи', async () => {
   const pc = await browser.newPage({ viewport: { width: 1300, height: 760 } }); const bad = [];
   pc.on('console', m => { if (/Content Security Policy|Refused to/.test(m.text())) bad.push(m.text()); });

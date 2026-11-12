@@ -5,7 +5,7 @@ import { initPlayer, resizeCanvas, seek, toggle, pause, play, snapshot, requestD
 import { setLaneSize, toggleTrack, initTimeline, render as renderTimeline, zoomBy, zoomFit, setZoom } from './timeline.js';
 import { initLibrary, initInspector, importCaptionFile, showTab, showProject } from './panels.js';
 import { initPreviewLayer, renderHandles } from './preview.js';
-import { addMarker, removeMarker, jumpMarker, addToTimeline, addOverlay, splitAt, deleteSel, duplicateSel, copySel, pasteClip, canPaste, cutRange, addCaption, normalizeSel, transitionsAll, addTitleCard, addLayerAt, TEXT_PRESETS, CARD_STYLES } from './ops.js';
+import { TEMPLATES, applyTemplate, addMarker, removeMarker, jumpMarker, addToTimeline, addOverlay, splitAt, deleteSel, duplicateSel, copySel, pasteClip, canPaste, cutRange, addCaption, normalizeSel, transitionsAll, addTitleCard, addLayerAt, TEXT_PRESETS, CARD_STYLES } from './ops.js';
 import { initMenu } from './menu.js';
 import { initCtx } from './ctxmenu.js';
 import { toSrt, toVtt } from './srt.js';
@@ -514,6 +514,7 @@ window.addEventListener('beforeunload', e => { if (isRecording() || asrBusy() ||
   initMenu($('menubar'), [
     { label: 'Файл', items: [
       { label: 'Новий проєкт', ic: 'plus', run: () => $('btnNew').click() },
+      { label: 'Готові набори', ic: 'text', sub: Object.entries(TEMPLATES).map(([k, v]) => ({ label: v.name, run: () => applyTemplate(k) })) },
       { label: 'Відкрити проєкт із файлу…', ic: 'upload', run: () => $('projInput').click() },
       { label: 'Зберегти проєкт у файл…', ic: 'download', enabled: () => media.size > 0, run: saveProjectFile },
       { sep: true },

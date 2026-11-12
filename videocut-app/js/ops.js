@@ -2,6 +2,7 @@
 import { splitKf } from './kf.js';
 import { S, media, uid, emit, layout, clipAt, srcTime, clipDur, musicDur, mainEnd, duration, commit, select, selectMany, findSel, rippleShift, outputSize, ASPECTS, laneOf, laneLocked } from './state.js';
 import { applyLayout } from './layer.js';
+import { CC_PRESETS, capStyle } from './cc.js';
 import { seek } from './player.js';
 import { toast } from './ui.js';
 import { addMedia, peakIn, PEAKS_RATE, grabFrame } from './media.js';
@@ -481,4 +482,22 @@ export function jumpMarker(dir) {
   const eps = 0.01, n = dir > 0 ? ms.find(x => x > S.t + eps) : [...ms].reverse().find(x => x < S.t - eps);
   if (n == null) { toast(dir > 0 ? 'Далі маркерів немає' : 'Раніше маркерів немає'); return false; }
   seek(n); return true;
+}
+
+// ── готові набори: додають на таймлайн готові написи, їх потім можна змінити ──
+export const TEMPLATES = {
+  intro: { name: 'Вступ: заголовок і підпис', hint: 'Великий заголовок на початку й підпис автора під ним.' },
+  steps: { name: 'Урок: кроки 1-3', hint: 'Три позначки «Крок» рівно по довжині відео.' },
+  outro: { name: 'Фінал: подяка й заклик', hint: 'Заголовок і підзаголовок у кінці відео.' },
+  reels: { name: 'Вертикальне відео (9:16)', hint: 'Формат кадру 9:16 і великі яскраві субтитри.' },
+};
+export function applyTemplate(key) {
+  const p = S.project, total = Math.max(6, mainEnd() || duration() || 10), mk = (preset, patch) => ({ id: uid('o'), type: 'text', fade: true, anim: 'fade', dur: 3, start: 0, ...structuredClone(TEXT_PRESETS[preset].o), ...patch });
+  if (key === 'intro') p.overlays.push(mk('title', { text: 'Назва відео', start: 0, dur: 3.5 }), mk('lower', { text: 'Ім’я Прізвище\nавтор', start: 0.8, dur: 3, y: 0.78 }));
+  else if (key === 'steps') { const seg = total / 3; for (let i = 0; i < 3; i++) p.overlays.push(mk('step', { text: 'Крок ' + (i + 1), start: Math.round(i * seg * 10) / 10, dur: Math.max(1, Math.round(seg * 10) / 10) })); }
+  else if (key === 'outro') { const s = Math.max(0, total - 4); p.overlays.push(mk('title', { text: 'Дякуємо за перегляд', start: s, dur: 4, size: 96 }), mk('subtitle', { text: 'Підписуйтесь, щоб не пропустити нове', start: s + 0.6, dur: 3.4 })); }
+  else if (key === 'reels') { p.aspect = '9:16'; p.captionStyle = Object.assign(capStyle(p), CC_PRESETS.reels, { preset: 'reels' }); commit('Шаблон: ' + TEMPLATES.reels.name); emit('aspect'); return; }
+  else return;
+  commit('Шаблон: ' + TEMPLATES[key].name);
+  toast('Додано на таймлайн: ' + TEMPLATES[key].name, 'ok');
 }

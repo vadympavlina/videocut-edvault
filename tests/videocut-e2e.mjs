@@ -1004,6 +1004,22 @@ await step('медіа: пошук за назвою й фільтр «Віль�
   await p28.close(); assert.deepEqual(errs, []);
 });
 
+await step('готові набори: меню «Файл» додає вступ, кроки, фінал і вертикальний формат; кожен набір скасовується одним кроком', async () => {
+  const p29 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
+  p29.on('pageerror', e => errs.push(e.message));
+  await p29.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p29.goto(`http://localhost:${port}/index.html`); await p29.waitForFunction(() => window.VideoCut);
+  await p29.setInputFiles('#fileInput', video); await p29.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p29.waitForTimeout(900);
+  const run = async name => { await p29.click('#menubar >> text=Файл'); await p29.click('text=Готові набори'); await p29.click(`.menu-pop >> text=${name}, [role="menu"] >> text=${name}`.split(',')[0]).catch(async () => { await p29.getByText(name, { exact: true }).click(); }); await p29.waitForTimeout(300); };
+  await run('Вступ: заголовок і підпис'); assert.equal(await p29.evaluate(() => window.VideoCut.S.project.overlays.length), 2, 'вступ: 2 написи');
+  await run('Урок: кроки 1-3'); assert.equal(await p29.evaluate(() => window.VideoCut.S.project.overlays.length), 5, 'кроки: ще 3');
+  await run('Вертикальне відео (9:16)'); assert.equal(await p29.evaluate(() => window.VideoCut.S.project.aspect), '9:16');
+  assert.equal(await p29.evaluate(() => window.VideoCut.S.project.captionStyle.preset), 'reels');
+  await p29.keyboard.press('Control+z'); await p29.waitForTimeout(200);
+  assert.equal(await p29.evaluate(() => window.VideoCut.S.project.aspect), '16:9', 'скасування формату одним кроком');
+  await p29.close(); assert.deepEqual(errs, []);
+});
+
 await step('політика безпеки (CSP) не блокує сторінку: жодних порушень під час запуску й роботи', async () => {
   const pc = await browser.newPage({ viewport: { width: 1300, height: 760 } }); const bad = [];
   pc.on('console', m => { if (/Content Security Policy|Refused to/.test(m.text())) bad.push(m.text()); });

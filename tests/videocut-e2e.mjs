@@ -800,6 +800,31 @@ await step('історія змін: кроки мають назви, підк�
   await p19.close(); assert.deepEqual(errs, []);
 });
 
+await step('доріжки: елемент можна перетягнути в інший ряд і на нову доріжку, порожні ряди зникають', async () => {
+  const p20 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  p20.on('pageerror', e => errs.push(e.message));
+  await p20.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p20.goto(`http://localhost:${port}/index.html`); await p20.waitForFunction(() => window.VideoCut);
+  await p20.setInputFiles('#fileInput', video); await p20.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p20.waitForTimeout(900);
+  await p20.evaluate(async () => { const V = window.VideoCut, { addOverlay } = await import('./videocut-app/js/ops.js'); V.seek(1); addOverlay('text', { preset: 'title' }); V.seek(1.5); addOverlay('rect'); });
+  await p20.waitForTimeout(500);
+  const rows = () => p20.evaluate(() => [...document.querySelectorAll('.lane-ov .it')].map(i => Math.round((i.getBoundingClientRect().top - document.querySelector('.lane-ov').getBoundingClientRect().top - 3) / 26)));
+  const before = await rows(); assert.deepEqual([...before].sort(), [0, 1], 'накладні елементи розкладені на два ряди: ' + before);
+  // тягнемо верхній елемент униз на два ряди: з'являється третій ряд
+  const items = p20.locator('.lane-ov .it'); const top = await p20.evaluate(() => { const l = [...document.querySelectorAll('.lane-ov .it')].map(i => ({ id: i.dataset.id, y: i.getBoundingClientRect().top })); l.sort((a, b) => a.y - b.y); return l[0].id; });
+  const el = p20.locator(`.lane-ov .it[data-id="${top}"]`); const bb = await el.boundingBox();
+  await p20.mouse.move(bb.x + bb.width / 2, bb.y + 10); await p20.mouse.down(); await p20.mouse.move(bb.x + bb.width / 2, bb.y + 10 + 30, { steps: 4 }); await p20.mouse.move(bb.x + bb.width / 2, bb.y + 10 + 62, { steps: 4 });
+  const live = await p20.evaluate(() => ({ hud: document.querySelector('.tl-hud')?.textContent, h: document.querySelector('.lane-ov').getBoundingClientRect().height }));
+  assert.match(live.hud, /доріжка 3/, 'підказка показує номер доріжки: ' + live.hud); assert.ok(live.h >= 3 * 26, 'з\u2019явився порожній ряд для нової доріжки: ' + live.h);
+  await p20.mouse.up(); await p20.waitForTimeout(400);
+  const after = await p20.evaluate(() => window.VideoCut.S.project.overlays.map(o => o.row));
+  assert.ok(after.some(r => r === 2 || r === 1), 'ряд збережено в проєкті: ' + JSON.stringify(after));
+  const rowsAfter = await rows(); assert.ok(Math.max(...rowsAfter) <= 1, 'порожні ряди стиснуто: ' + rowsAfter);
+  assert.equal(await p20.evaluate(async () => (await import('./videocut-app/js/state.js')).historyList().items.at(-1).label), 'Інша доріжка');
+  await p20.keyboard.press('Control+z'); assert.deepEqual(await p20.evaluate(() => window.VideoCut.S.project.overlays.map(o => o.row)), [undefined, undefined], 'скасування повертає автоматичні ряди');
+  await p20.close(); assert.deepEqual(errs, []);
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

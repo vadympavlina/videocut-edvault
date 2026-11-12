@@ -17,6 +17,7 @@ let vCanvas, aCanvas, v2Canvas;
 let v2Rows = 1, v2RowOf = new Map();
 let ovRows = 1;
 let muRows = 1, muRowOf = new Map();
+let ovRowOf = new Map(), dragRows = null; // dragRows: доріжка ('v2' | 'ov' | 'a'), елемент якої зараз тягнуть по рядах
 // що зараз тягнуть із бібліотеки — тоді тимчасово показуємо доріжки, куди можна кинути
 let dragKind = null;
 
@@ -162,17 +163,16 @@ function onWheel(e) {
 }
 
 // ── рендер ──
+// Ряди всередині доріжки. Елемент із полем row займає саме цей ряд (або найближчий вільний нижче), решта розкладаються автоматично.
 function assignRows(items) {
-  const rows = [];
-  const sorted = items.slice().sort((a, b) => a.start - b.start);
-  const rowOf = new Map();
-  for (const o of sorted) {
-    let r = rows.findIndex(end => end <= o.start + 1e-6);
-    if (r < 0) { r = rows.length; rows.push(0); }
-    rows[r] = o.start + o.dur;
-    rowOf.set(o.id, r);
-  }
-  return { rowOf, n: Math.max(1, rows.length) };
+  const occ = [], rowOf = new Map();
+  const free = (r, s, e) => !(occ[r] || []).some(([a, b]) => s < b - 1e-6 && e > a + 1e-6);
+  const put = (o, from) => { let r = from; while (!free(r, o.start, o.start + o.dur)) r++; (occ[r] = occ[r] || []).push([o.start, o.start + o.dur]); rowOf.set(o.id, r); };
+  const byStart = (a, b) => a.start - b.start;
+  items.filter(o => Number.isInteger(o.row) && o.row >= 0).sort(byStart).forEach(o => put(o, o.row));
+  items.filter(o => !(Number.isInteger(o.row) && o.row >= 0)).sort(byStart).forEach(o => put(o, 0));
+  for (let i = 0; i < occ.length; i++) occ[i] = occ[i] || [];
+  return { rowOf, n: Math.max(1, occ.length) };
 }
 
 let renderQueued = 0;
@@ -196,11 +196,13 @@ export function render() {
   const hnd = '<i class="h h-l"></i><i class="h h-r"></i>';
 
   const layers = p.overlays.filter(isLayer), graphics = p.overlays.filter(o => !isLayer(o));
-  const { rowOf, n } = assignRows(graphics);
+  const gr = assignRows(graphics), rowOf = gr.rowOf;
+  ovRowOf = rowOf;
+  const n = gr.n + (dragRows === 'ov' ? 1 : 0); // під час перетягування вниз додається порожній ряд — нова доріжка
   ovRows = n;
   const ovH = n * ROW + 6;
   const lr = assignRows(layers);
-  v2Rows = lr.n; v2RowOf = lr.rowOf;
+  v2Rows = lr.n + (dragRows === 'v2' ? 1 : 0); v2RowOf = lr.rowOf;
   const v2H = v2Rows * V2_H + 6;
   const lay = layers.map(o => {
     const m = media.get(o.mediaId);
@@ -228,8 +230,8 @@ export function render() {
     const trm = c.tr && idx > 0 ? `<b class="tr-zone" style="width:${Math.min((c.tr.d || 0.6) * pps, (l.end - l.start) * pps)}px" title="Перехід: ${TR_NAMES[c.tr.type] || ''}"></b>` : '';
     return `<div class="it clip${selCls('clip', c.id)}${m ? '' : ' missing'}" data-kind="clip" data-id="${c.id}" style="left:${l.start * pps}px;width:${Math.max(4, (l.end - l.start) * pps)}px">${fi}${fo}${trm}<span class="lbl">${esc(m ? m.name : 'Файл відсутній')}${badges.length ? ' · ' + badges.join(' · ') : ''}</span>${hnd}</div>`;
   }).join('');
-  const mr = assignRows(p.music.map(x => ({ id: x.id, start: x.start, dur: musicDur(x) })));
-  muRows = mr.n; muRowOf = mr.rowOf;
+  const mr = assignRows(p.music.map(x => ({ id: x.id, start: x.start, dur: musicDur(x), row: x.row })));
+  muRows = mr.n + (dragRows === 'a' ? 1 : 0); muRowOf = mr.rowOf;
   const mu = p.music.map(x => {
     const m = media.get(x.mediaId);
     return `<div class="it mu${x.voice ? ' voice' : ''}${selCls('music', x.id)}" data-kind="music" data-id="${x.id}" style="left:${x.start * pps}px;width:${Math.max(4, musicDur(x) * pps)}px;top:${4 + (muRowOf.get(x.id) || 0) * A_H}px"><span class="lbl">${icon(x.voice ? 'mic' : 'music')}${esc(x.voice ? 'Голос' : m ? m.name : 'Файл відсутній')}</span>${hnd}</div>`;
@@ -481,7 +483,7 @@ function onDown(e) {
   select(kind, id);
   const mode = e.target.classList.contains('h-l') ? 'l' : e.target.classList.contains('h-r') ? 'r' : 'move';
   const group = mode === 'move' ? S.multi.filter(x => !lockedItem(x.kind, x.id)).filter(x => (kind === 'clip') === (x.kind === 'clip')) : [{ kind, id }];
-  drag = { kind, id, mode, group: group.length ? group : [{ kind, id }], x0: e.clientX, t0: timeAt(e), orig: structuredClone(S.project), moved: false, pointerId: e.pointerId, left0: it.offsetLeft };
+  drag = { kind, id, mode, group: group.length ? group : [{ kind, id }], x0: e.clientX, y0: e.clientY, t0: timeAt(e), orig: structuredClone(S.project), moved: false, pointerId: e.pointerId, left0: it.offsetLeft };
   inner.setPointerCapture(e.pointerId);
   inner.addEventListener('pointermove', onMove);
   inner.addEventListener('pointerup', onUp, { once: true });
@@ -564,6 +566,15 @@ const hideHud = () => { if (hud) hud.hidden = true; };
 // ── початок і кінець перетягування ──
 function beginVisuals(e) {
   document.body.classList.add('tl-dragging');
+  // перенесення між рядами: лише для накладань і звуку (кліпи основної доріжки йдуть послідовно)
+  const prim = itemOf(drag.kind, drag.id);
+  if (drag.mode === 'move' && prim && (drag.kind === 'music' || drag.kind === 'overlay')) {
+    const lane = drag.kind === 'music' ? 'a' : isLayer(prim) ? 'v2' : 'ov';
+    const map = lane === 'a' ? muRowOf : lane === 'v2' ? v2RowOf : ovRowOf, count = lane === 'a' ? muRows : lane === 'v2' ? v2Rows : ovRows;
+    drag.rowKind = lane; drag.rowH = lane === 'a' ? A_H : lane === 'v2' ? V2_H : ROW; drag.maxRow = count; // індекс порожнього ряду внизу
+    drag.rows0 = new Map(drag.group.map(g => [g.id, map.get(g.id) || 0]));
+    dragRows = lane;
+  }
   drag.srcEls = [...lanes.querySelectorAll('.it')].filter(el => drag.group.some(g => g.kind === el.dataset.kind && g.id === el.dataset.id));
   if (drag.kind === 'clip' && drag.mode === 'move') {
     const prim = drag.srcEls.find(el => el.dataset.id === drag.id) || drag.srcEls[0];
@@ -580,6 +591,7 @@ function beginVisuals(e) {
   autoScroll();
 }
 function endVisuals(d) {
+  if (dragRows) { dragRows = null; queueMicrotask(render); }
   document.body.classList.remove('tl-dragging');
   if (d && d.ghost) d.ghost.remove();
   inner.querySelectorAll('.tl-ghost').forEach(g => g.remove());
@@ -615,7 +627,7 @@ function onMove(e) {
   if (!drag) return;
   lastEv = e;
   S.altNoSnap = e.altKey;
-  if (!drag.moved && Math.abs(e.clientX - drag.x0) < 3) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 3) return;
   if (!drag.moved) { drag.moved = true; beginVisuals(e); }
   hoverEl.hidden = true;
   S.snapAt = null;
@@ -650,8 +662,15 @@ function moveGroup(P, dt) {
   let d = start - prim.start;
   const minStart = Math.min(...drag.group.map(g => itemOf(g.kind, g.id, drag.orig).start));
   if (minStart + d < 0) d = -minStart;
-  for (const g of drag.group) { const o = itemOf(g.kind, g.id, P), og = itemOf(g.kind, g.id, drag.orig); if (o && og) o.start = Math.max(0, og.start + d); }
-  return `${fmt(Math.max(0, prim.start + d), true)}${drag.group.length > 1 ? ` · ${drag.group.length} елем.` : ''}`;
+  const dRow = drag.rowKind && lastEv ? Math.round((lastEv.clientY - drag.y0) / drag.rowH) : 0;
+  for (const g of drag.group) {
+    const o = itemOf(g.kind, g.id, P), og = itemOf(g.kind, g.id, drag.orig);
+    if (!o || !og) continue;
+    o.start = Math.max(0, og.start + d);
+    if (dRow !== 0) o.row = clamp((drag.rows0.get(g.id) || 0) + dRow, 0, drag.maxRow);
+  }
+  const rowTxt = dRow !== 0 ? ` · доріжка ${clamp((drag.rows0.get(drag.id) || 0) + dRow, 0, drag.maxRow) + 1}` : '';
+  return `${fmt(Math.max(0, prim.start + d), true)}${drag.group.length > 1 ? ` · ${drag.group.length} елем.` : ''}${rowTxt}`;
 }
 function moveTimed(P, list, dt) {
   const o = list.find(x => x.id === drag.id), orig = (drag.kind === 'overlay' ? drag.orig.overlays : drag.orig.captions).find(x => x.id === drag.id);
@@ -763,6 +782,14 @@ function onUp() {
   if (!drag) return;
   const d = drag; drag = null;
   S.altNoSnap = false; S.snapAt = null; showSnap(null);
+  // порожні ряди після перенесення зникають: номери рядів стискаємо до щільних
+  if (d.moved && d.rowKind && S.project.overlays.concat(S.project.music).some(o => o.row != null)) {
+    render();
+    const map = d.rowKind === 'a' ? muRowOf : d.rowKind === 'v2' ? v2RowOf : ovRowOf;
+    const list = d.rowKind === 'a' ? S.project.music : S.project.overlays.filter(o => (d.rowKind === 'v2') === isLayer(o) && !(d.rowKind === 'a'));
+    const used = [...new Set(list.map(o => map.get(o.id) || 0))].sort((a, b) => a - b);
+    for (const o of list) if (o.row != null) o.row = Math.max(0, used.indexOf(map.get(o.id) || 0));
+  }
   endVisuals(d);
   if (!d.moved) return;
   if (d.kind === 'clip' && d.mode === 'move') {

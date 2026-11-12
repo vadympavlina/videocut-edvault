@@ -1045,3 +1045,48 @@ body.tl-dragging .it .h{cursor:inherit}
 .pv-zoom select{height:26px;padding:0 6px;font-size:12px;width:92px;min-height:24px}
 .pv-tools .btn.on{background:var(--accent-light);color:var(--accent)}
 @media(max-width:760px){.pv-tools{display:none}}
+
+/* ════════════ Права панель П1: шапка, швидкі дії, вкладки, рядки властивостей ════════════ */
+.insp{padding:0;overflow:hidden;display:flex;flex-direction:column}
+.insp-head{position:static;flex:none;margin:0;padding:10px 12px;gap:10px;background:var(--bar-bg);border-bottom:1px solid var(--border);box-shadow:none;order:0}
+.insp-ico{width:30px;height:30px;border-radius:6px;background:var(--surface3);display:grid;place-items:center;flex:none}
+.iquick{flex:none;display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.iquick .btn{flex:1 1 0;min-width:0;padding:0 8px;height:30px;font-size:12px;gap:5px}
+.iquick .btn span{overflow:hidden;text-overflow:ellipsis}
+.iquick .btn[data-danger]:hover:not(:disabled){color:var(--danger);border-color:var(--danger)}
+.itabs{flex:none;display:flex;border-bottom:1px solid var(--border);background:var(--bar-bg)}
+.itabs button{flex:1;height:36px;font-size:12.5px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;padding:0 4px}
+.itabs button:hover{color:var(--text)}
+.itabs button.on{color:var(--text);font-weight:600;border-bottom-color:var(--accent)}
+.ipanel{flex:1;min-height:0;overflow-y:auto;padding:4px 12px 28px}
+.ipanel.solo{padding-top:8px}
+.isec{padding:10px 0 6px;border-bottom:1px solid var(--border)}
+.isec:last-child{border-bottom:0}
+.isec-h{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.isec-h .reset{margin-left:auto;font-size:11px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--muted);padding:2px 6px;border-radius:4px}
+.isec-h .reset:hover{background:var(--surface3);color:var(--text)}
+.prow{display:grid;grid-template-columns:92px minmax(0,1fr) auto;gap:8px;align-items:center;min-height:32px;padding:2px 0}
+.prow.wide{grid-template-columns:92px minmax(0,1fr)}
+.prow.stack{grid-template-columns:minmax(0,1fr);gap:6px;padding:4px 0}
+.prow>label{font-size:12.5px;color:var(--text2);font-weight:400;margin:0}
+.prow input[type=range]{width:100%;margin:0}
+.prow .aux{min-width:46px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:2px 6px}
+.prow .seg{width:100%}
+.prow textarea.input{width:100%;resize:vertical}
+.tgl{justify-self:end;position:relative;width:36px;height:20px;border-radius:10px;background:var(--surface3);border:1px solid var(--border2);transition:background .12s}
+.tgl i{position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:transform .14s,background .14s}
+.tgl.on{background:var(--accent);border-color:var(--accent)}
+.tgl.on i{transform:translateX(16px);background:var(--on-accent)}
+.iaction{padding:6px 0 2px}
+.multi-list{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:13px}
+.multi-list b{display:inline-block;min-width:22px}
+.insp .hint{display:block!important;margin:4px 0 6px;font-size:12px;color:var(--muted);line-height:1.5}
+.insp .isec-h .ico{display:none}
+.iquick .btn{flex-direction:column;height:46px;gap:2px;font-size:11.5px;padding:0 4px}
+.iquick .btn .ico{width:16px;height:16px}
+.isec .reset{opacity:0;transition:opacity .12s}
+.isec:hover .reset,.isec:focus-within .reset{opacity:1}
+.prow .seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr}
+.prow.stack .seg{grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));grid-auto-columns:auto}
+.th-b{width:24px;height:24px}
+.isec-h .reset{min-height:24px;padding:3px 8px}

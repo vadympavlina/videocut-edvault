@@ -51,11 +51,16 @@ await step('вирізання шматка не дублює перехід у�
 
 await step('прокрутка панелі властивостей не скидається після змін', async () => {
   await page.locator('.it.clip').first().click();
-  await page.evaluate(() => { document.getElementById('inspector').scrollTop = 1e5; });
-  const before = await page.evaluate(() => document.getElementById('inspector').scrollTop);
+  await page.locator('#inspector [data-a="itab"][data-v="time"]').click();
+  const limit = await page.addStyleTag({ content: '#ipanel{max-height:140px!important}' });
+  await page.evaluate(() => { document.getElementById('ipanel').scrollTop = 1e5; });
+  const before = await page.evaluate(() => document.getElementById('ipanel').scrollTop);
   assert.ok(before > 0, 'панель має прокручуватися');
-  for (let i = 0; i < 4; i++) { await page.locator('#inspector [data-toggle="fadeIn"]').first().dispatchEvent('click'); await page.waitForTimeout(250); }
-  assert.equal(await page.evaluate(() => document.getElementById('inspector').scrollTop), before);
+  for (let i = 0; i < 4; i++) { await page.locator('#inspector [data-set="speed"][data-v="1.25"], #inspector [data-set="speed"][data-v="1"]').nth(i % 2).dispatchEvent('click'); await page.waitForTimeout(250); }
+  const after = await page.evaluate(() => document.getElementById('ipanel').scrollTop);
+  assert.ok(Math.abs(after - before) < 4, 'прокрутка лишилась на місці: ' + before + ' → ' + after);
+  await limit.evaluate(el => el.remove());
+  await page.locator('#inspector [data-a="itab"][data-v="frame"]').click();
 });
 
 await step('вікно автосубтитрів пропонує джерела звуку', async () => {
@@ -128,6 +133,7 @@ await step('повзунок не обривається, якщо зупини�
   await page.evaluate(() => document.activeElement.blur());
   await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
   await page.keyboard.press('KeyT'); await page.waitForTimeout(300);
+  await page.locator('#inspector [data-a="itab"][data-v="look"]').click(); await page.waitForTimeout(200);
   const sl = page.locator('#inspector input[type=range]').first();
   const bb = await sl.boundingBox();
   await page.evaluate(() => { document.querySelector('#inspector input[type=range]').__mark = 1; });
@@ -142,6 +148,7 @@ await step('повзунок не обривається, якщо зупини�
 });
 
 await step('курсор у тексті не злітає після паузи в друку', async () => {
+  await page.locator('#inspector [data-a="itab"][data-v="text"]').click();
   const ta = page.locator('#inspector textarea').first();
   await ta.click(); await page.keyboard.press('Control+A'); await page.keyboard.type('abc');
   await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft');
@@ -656,6 +663,37 @@ await step('перегляд: масштаб (Підігнати, 100 %), про
   await p14.reload(); await p14.waitForFunction(() => window.VideoCut);
   assert.equal(await p14.evaluate(() => window.VideoCut.S.view.grid), true, 'сітка запам\u2019ятовується');
   await p14.close(); assert.deepEqual(errs, []);
+});
+
+await step('права панель: вкладки за змістом для кожного типу, параметри без дублів, «Скинути», панель для кількох елементів', async () => {
+  const p15 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  p15.on('pageerror', e => errs.push(e.message));
+  await p15.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p15.goto(`http://localhost:${port}/index.html`); await p15.waitForFunction(() => window.VideoCut);
+  await p15.setInputFiles('#fileInput', [video, audio]); await p15.waitForFunction(() => window.VideoCut.S.project.clips.length > 0 && window.VideoCut.S.project.music.length > 0); await p15.waitForTimeout(1000);
+  const tabs = () => p15.evaluate(() => [...document.querySelectorAll('#inspector [role=tab]')].map(b => b.textContent.trim()));
+  assert.equal(await p15.evaluate(() => document.querySelector('#inspector .insp-head b').textContent), 'Проєкт');
+  await p15.locator('.tl-lanes .clip').first().click();
+  assert.deepEqual(await tabs(), ['Кадр', 'Звук', 'Час', 'Вигляд']);
+  // кожен параметр лише в одному місці: поява/зникнення тільки на вкладці «Час», наближення тільки на «Кадр»
+  const has = f => p15.locator(`#inspector [data-f="${f}"]`).count();
+  assert.equal(await has('zoom'), 1); assert.equal(await has('fadeIn'), 0);
+  await p15.locator('#inspector [data-a="itab"][data-v="time"]').click();
+  assert.equal(await has('fadeIn'), 1); assert.equal(await has('zoom'), 0);
+  // «Скинути» повертає типове значення
+  await p15.locator('#inspector [data-a="itab"][data-v="frame"]').click();
+  await p15.evaluate(() => { const o = window.VideoCut.S.project.clips[0]; o.zoom = 2; window.VideoCut.commit(); });
+  await p15.locator('#inspector .isec:has([data-f="zoom"]) .reset').click({ force: true }); await p15.waitForTimeout(200);
+  assert.equal(await p15.evaluate(() => window.VideoCut.S.project.clips[0].zoom), 1, 'скидання повернуло масштаб');
+  assert.equal(await p15.locator('#inspector [data-a="quick"], #inspector .iquick .btn').count() >= 3, true, 'швидкі дії з підписами');
+  assert.deepEqual(await p15.evaluate(() => [...document.querySelectorAll('#inspector .iquick .btn')].map(b => b.textContent.trim()).filter(x => !x)), [], 'у кнопок є підписи');
+  await p15.locator('.tl-lanes .mu').first().click();
+  assert.deepEqual(await tabs(), ['Звук', 'Час']);
+  await p15.evaluate(async () => { const { addOverlay } = await import('./videocut-app/js/ops.js'); addOverlay('text', { preset: 'title' }); });
+  await p15.waitForTimeout(300); assert.deepEqual(await tabs(), ['Текст', 'Вигляд', 'Час']);
+  await p15.keyboard.press('Control+a'); await p15.waitForTimeout(200);
+  assert.match(await p15.evaluate(() => document.querySelector('#inspector .insp-head b').textContent), /Виділено: \d+/);
+  await p15.close(); assert.deepEqual(errs, []);
 });
 
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));

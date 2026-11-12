@@ -13,6 +13,7 @@ import { exportVideo, exportAudio } from './export.js';
 import { openExport, isExporting } from './export-ui.js';
 import { openSilences } from './silences.js';
 import { openVoice, stopVoice, isRecording } from './voice.js';
+import { initScreenRec, startScreenRec, canScreenRec, isScreenRecording } from './screenrec.js';
 import { DB, takeHandoff } from './db.js';
 import { packProject, unpackProject, PROJ_EXT } from './projfile.js';
 import { initDock } from './dock.js';
@@ -453,6 +454,7 @@ window.addEventListener('unhandledrejection', e => onErr(e.reason));
 
 initDock();
 initHistoryUi();
+initScreenRec(file => importFiles([file]));
 {
   const sel = $('laneH'); try { sel.value = localStorage.getItem('vc_lanes') || 'm'; } catch { /* немає доступу */ }
   sel.addEventListener('change', () => setLaneSize(sel.value));
@@ -555,6 +557,7 @@ window.addEventListener('beforeunload', e => { if (isRecording() || asrBusy() ||
       { label: 'Логотип чи картинка…', ic: 'image', enabled: has, run: () => pickFiles('logo') },
       { label: 'Музика чи звук…', ic: 'music', run: () => pickFiles('') },
       { label: 'Озвучити голосом…', ic: 'mic', key: 'R', enabled: has, run: openVoice },
+      { label: 'Записати екран…', ic: 'camera', enabled: () => canScreenRec() && !isScreenRecording(), run: startScreenRec },
       { head: 'Текст' },
       { label: 'Текст на відео', ic: 'text', sub: Object.entries(TEXT_PRESETS).map(([k, v]) => ({ label: v.label, run: () => { showLibTab('text'); addOverlay('text', { preset: k }); emit('focus-inspector'); } })) },
       { label: 'Субтитр у позиції курсора', ic: 'cc', key: 'C', run: () => { showLibTab('captions'); newCaptionHere(); } },

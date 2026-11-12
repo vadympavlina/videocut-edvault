@@ -1020,6 +1020,24 @@ await step('готові набори: меню «Файл» додає всту
   await p29.close(); assert.deepEqual(errs, []);
 });
 
+await step('запис екрана: меню «Додати», індикатор запису, зупинка додає відео в проєкт', async () => {
+  const p30 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
+  p30.on('pageerror', e => errs.push(e.message));
+  await p30.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p30.addInitScript(() => { // у тесті замість вибору вікна підставляємо рухоме полотно
+    navigator.mediaDevices.getDisplayMedia = async () => { const c = document.createElement('canvas'); c.width = 640; c.height = 360; const x = c.getContext('2d'); let i = 0; setInterval(() => { x.fillStyle = `hsl(${(i += 7) % 360},70%,50%)`; x.fillRect(0, 0, 640, 360); x.fillStyle = '#fff'; x.fillRect(i % 600, 150, 40, 60); }, 33); return c.captureStream(30); };
+  });
+  await p30.goto(`http://localhost:${port}/index.html`); await p30.waitForFunction(() => window.VideoCut);
+  await p30.click('#menubar >> text=Додати'); await p30.getByText('Записати екран…', { exact: true }).click();
+  await p30.waitForSelector('#scrBar:not([hidden])'); await p30.waitForTimeout(2600);
+  assert.match(await p30.textContent('#scrTime'), /00:0[1-9]|00:1/, 'таймер іде');
+  await p30.click('#scrStop');
+  await p30.waitForFunction(() => window.VideoCut.S.project.clips.length === 1, null, { timeout: 20000 });
+  const r = await p30.evaluate(() => { const V = window.VideoCut, m = [...V.media.values()][0]; return { name: m.name, d: m.duration, bar: document.getElementById('scrBar').hidden }; });
+  assert.match(r.name, /^Запис екрана/); assert.ok(r.d > 1, 'тривалість запису: ' + r.d); assert.equal(r.bar, true, 'індикатор сховано');
+  await p30.close(); assert.deepEqual(errs, []);
+});
+
 await step('політика безпеки (CSP) не блокує сторінку: жодних порушень під час запуску й роботи', async () => {
   const pc = await browser.newPage({ viewport: { width: 1300, height: 760 } }); const bad = [];
   pc.on('console', m => { if (/Content Security Policy|Refused to/.test(m.text())) bad.push(m.text()); });

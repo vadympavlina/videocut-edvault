@@ -41,20 +41,22 @@ await page.setInputFiles('#fileInput', video);
 await page.waitForFunction(() => window.VideoCut?.S.project.clips.length > 0, null, { timeout: 20000 });
 await page.waitForTimeout(1500);
 
-await step('готові набори: меню «Файл» додає вступ, кроки, фінал і вертикальний формат; кожен набір скасовується одним кроком', async () => {
-  const p29 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
-  p29.on('pageerror', e => errs.push(e.message));
-  await p29.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
-  await p29.goto(`http://localhost:${port}/index.html`); await p29.waitForFunction(() => window.VideoCut);
-  await p29.setInputFiles('#fileInput', video); await p29.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p29.waitForTimeout(900);
-  const run = async name => { await p29.click('#menubar >> text=Файл'); await p29.click('text=Готові набори'); await p29.click(`.menu-pop >> text=${name}, [role="menu"] >> text=${name}`.split(',')[0]).catch(async () => { await p29.getByText(name, { exact: true }).click(); }); await p29.waitForTimeout(300); };
-  await run('Вступ: заголовок і підпис'); assert.equal(await p29.evaluate(() => window.VideoCut.S.project.overlays.length), 2, 'вступ: 2 написи');
-  await run('Урок: кроки 1-3'); assert.equal(await p29.evaluate(() => window.VideoCut.S.project.overlays.length), 5, 'кроки: ще 3');
-  await run('Вертикальне відео (9:16)'); assert.equal(await p29.evaluate(() => window.VideoCut.S.project.aspect), '9:16');
-  assert.equal(await p29.evaluate(() => window.VideoCut.S.project.captionStyle.preset), 'reels');
-  await p29.keyboard.press('Control+z'); await p29.waitForTimeout(200);
-  assert.equal(await p29.evaluate(() => window.VideoCut.S.project.aspect), '16:9', 'скасування формату одним кроком');
-  await p29.close(); assert.deepEqual(errs, []);
+await step('запис екрана: меню «Додати», індикатор запису, зупинка додає відео в проєкт', async () => {
+  const p30 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
+  p30.on('pageerror', e => errs.push(e.message));
+  await p30.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p30.addInitScript(() => { // у тесті замість вибору вікна підставляємо рухоме полотно
+    navigator.mediaDevices.getDisplayMedia = async () => { const c = document.createElement('canvas'); c.width = 640; c.height = 360; const x = c.getContext('2d'); let i = 0; setInterval(() => { x.fillStyle = `hsl(${(i += 7) % 360},70%,50%)`; x.fillRect(0, 0, 640, 360); x.fillStyle = '#fff'; x.fillRect(i % 600, 150, 40, 60); }, 33); return c.captureStream(30); };
+  });
+  await p30.goto(`http://localhost:${port}/index.html`); await p30.waitForFunction(() => window.VideoCut);
+  await p30.click('#menubar >> text=Додати'); await p30.getByText('Записати екран…', { exact: true }).click();
+  await p30.waitForSelector('#scrBar:not([hidden])'); await p30.waitForTimeout(2600);
+  assert.match(await p30.textContent('#scrTime'), /00:0[1-9]|00:1/, 'таймер іде');
+  await p30.click('#scrStop');
+  await p30.waitForFunction(() => window.VideoCut.S.project.clips.length === 1, null, { timeout: 20000 });
+  const r = await p30.evaluate(() => { const V = window.VideoCut, m = [...V.media.values()][0]; return { name: m.name, d: m.duration, bar: document.getElementById('scrBar').hidden }; });
+  assert.match(r.name, /^Запис екрана/); assert.ok(r.d > 1, 'тривалість запису: ' + r.d); assert.equal(r.bar, true, 'індикатор сховано');
+  await p30.close(); assert.deepEqual(errs, []);
 });
 
 await browser.close(); srv.close();

@@ -1,9 +1,9 @@
 // Таймлайн: доріжки, перетягування, обрізання, прилипання, зум.
 // Мініатюри й хвилі малюються лише для видимої частини — це тримає швидкість навіть на годинних відео.
-import { S, media, emit, on, layout, duration, clipDur, musicDur, snap, snapHit, snapOn, commit, rippleShift, select, findSel } from './state.js';
+import { S, media, emit, on, layout, duration, clipDur, musicDur, snap, snapHit, snapOn, commit, rippleShift, select, selectMany, isSel, findSel, laneOf, laneLocked, trackOf, LANES } from './state.js';
 import { thumbAt, PEAKS_RATE } from './media.js';
 import { isLayer } from './layer.js';
-import { addToTimeline, addLayerAt } from './ops.js';
+import { addToTimeline, addLayerAt, addMarker, removeMarker, renameMarker } from './ops.js';
 import { seek } from './player.js';
 import { $, esc, icon, clamp, fmt, setHtml, paintRange } from './ui.js';
 
@@ -43,6 +43,20 @@ export function initTimeline() {
   window.addEventListener('resize', () => { render(); });
   scroll.addEventListener('wheel', onWheel, { passive: false });
   inner.addEventListener('pointerdown', onDown);
+  // кнопки в заголовках доріжок: сховати, вимкнути звук, соло, заблокувати
+  heads.addEventListener('click', e => {
+    const b = e.target.closest('.th-b'); if (!b) return;
+    const k = b.dataset.lane, a = b.dataset.act, T = (S.project.tracks = S.project.tracks || {});
+    const s = (T[k] = T[k] || {});
+    s[a] = !s[a];
+    if (a === 'solo' && s.solo) for (const o of ['v', 'v2', 'a']) if (o !== k && T[o]) T[o].solo = false;
+    if (a === 'lock' && s.lock) S.multi = S.multi.filter(x => !(x.kind === 'clip' && k === 'v') && !(x.kind === 'music' && k === 'a') && !(x.kind === 'caption' && k === 'cc'));
+    commit(); render(); emit('tracks');
+  });
+  // Esc під час перетягування скасовує його й нічого більше не робить
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && (drag || band)) { e.stopPropagation(); e.preventDefault(); if (band) { band.el?.remove(); band = null; inner.removeEventListener('pointermove', onBandMove); render(); } else cancelDrag(); } }, true);
+  // маркер: подвійний клік — перейменувати
+  $('tlRulerWrap')?.addEventListener('dblclick', e => { const mk = markerAt(e); if (mk) editMarker(mk, e); });
   // тонка лінія з часом під вказівником — щоб точно потрапити в потрібну мить
   let hoverRaf = 0, hoverX = null;
   inner.addEventListener('pointermove', e => {
@@ -178,7 +192,7 @@ export function render() {
   const width = Math.max(scroll.clientWidth, (d + 8) * pps);
   inner.style.width = width + 'px';
   const sel = S.sel;
-  const selCls = (k, id) => (sel && sel.kind === k && sel.id === id ? ' sel' : '');
+  const selCls = (k, id) => (isSel(k, id) ? (sel && sel.kind === k && sel.id === id ? ' sel main' : ' sel') : '') + (drag && drag.moved && drag.group.some(g => g.kind === k && g.id === id) ? ' drag-src' : '');
   const hnd = '<i class="h h-l"></i><i class="h h-r"></i>';
 
   const layers = p.overlays.filter(isLayer), graphics = p.overlays.filter(o => !isLayer(o));
@@ -231,9 +245,15 @@ export function render() {
   if (p.music.length || dragAud) rows.push([A_H * muRows, 'lane-a', `<canvas class="lane-canvas" id="tlACanvas"></canvas>${empty(!p.music.length, 'Відпустіть тут — музика чи звук')}${mu}`, 'music', 'Звук', 'Музика та озвучення']);
   if (p.captions.length) rows.push([CC_H, 'lane-cc', cc, 'cc', 'Субтитри', 'Субтитри']);
   if (graphics.length) rows.push([ovH, 'lane-ov', ov, 'text', 'Графіка', 'Текст, стрілки, розмиття']);
-  setHtml(lanes, rows.map(([h, cls, html]) => `<div class="lane ${cls}" style="height:${h}px">${html}</div>`).join(''));
+  const laneKey = cls => cls.slice(5); // lane-v → v
+  const stCls = cls => { const s = trackOf(laneKey(cls)); return (s.hide ? ' is-hidden' : '') + (s.lock ? ' is-locked' : '') + (s.mute || s.solo ? ' is-muted' : ''); };
+  const mkLines = (p.markers || []).map(m => `<i class="mk-line" style="left:${m.t * pps}px"></i>`).join('');
+  setHtml(lanes, rows.map(([h, cls, html]) => `<div class="lane ${cls}${stCls(cls)}" data-lane="${laneKey(cls)}" style="height:${h}px">${html}</div>`).join('') + mkLines);
+  const CAN = { v: ['hide', 'mute', 'solo', 'lock'], v2: ['hide', 'mute', 'solo', 'lock'], a: ['mute', 'solo', 'lock'], cc: ['hide', 'lock'], ov: ['hide', 'lock'] };
+  const BTN = { hide: ['eye', 'eyeOff', 'Сховати доріжку', 'Показати доріжку'], mute: ['volume', 'volumeOff', 'Вимкнути звук доріжки', 'Увімкнути звук доріжки'], solo: ['solo', 'solo', 'Лише ця доріжка (соло)', 'Прибрати соло'], lock: ['unlock', 'lock', 'Заблокувати доріжку від змін', 'Розблокувати доріжку'] };
+  const headBtns = k => `<span class="th-btns">${(CAN[k] || []).map(a => { const on = !!trackOf(k)[a], [i0, i1, t0, t1] = BTN[a]; return `<button type="button" class="th-b th-${a}${on ? ' on' : ''}" data-lane="${k}" data-act="${a}" aria-pressed="${on}" aria-label="${on ? t1 : t0}" data-tip="${on ? t1 : t0}">${a === 'solo' ? '<b>S</b>' : icon(on ? i1 : i0)}</button>`; }).join('')}</span>`;
   setHtml(heads, `<div class="head" style="height:${RULER_H}px"></div>` +
-    rows.map(([h, cls, , ic, name, tip]) => `<div class="head head-${cls.slice(5)}" style="height:${h}px" title="${tip}">${icon(ic)}<span>${name}</span></div>`).join('') + '<div style="height:40px"></div>');
+    rows.map(([h, cls, , ic, name, tip]) => `<div class="head head-${laneKey(cls)}${stCls(cls)}" data-lane="${laneKey(cls)}" style="height:${h}px" title="${tip}">${icon(ic)}<span class="th-n">${name}</span>${headBtns(laneKey(cls))}</div>`).join('') + '<div style="height:40px"></div>');
   // таймлайн не вищий, ніж потрібно — решта місця йде переглядові
   const need = BAR_H + RULER_H + rows.reduce((a, r) => a + r[0] + 1, 0) + 14;
   $('tl').style.setProperty('--tl-fit', need + 'px');
@@ -400,6 +420,14 @@ function drawRuler() {
     const lbl = major < 1 ? fmt(t, true) : fmt(t);
     g.fillText(lbl, x + 4, 12);
   }
+  const mkCol = cs.getPropertyValue('--cc').trim() || '#e8c93a';
+  for (const m of S.project.markers || []) {
+    const x = Math.round(m.t * pps - sl) + 0.5; if (x < -80 || x > w + 8) continue;
+    g.fillStyle = mkCol; g.strokeStyle = mkCol;
+    g.beginPath(); g.moveTo(x, RULER_H); g.lineTo(x - 5, RULER_H - 9); g.lineTo(x - 5, 2); g.lineTo(x + 5, 2); g.lineTo(x + 5, RULER_H - 9); g.closePath(); g.fill();
+    g.globalAlpha = 0.35; g.beginPath(); g.moveTo(x, RULER_H); g.lineTo(x, RULER_H + 3000); g.stroke(); g.globalAlpha = 1;
+    if (m.name) { g.fillStyle = cs.getPropertyValue('--text').trim() || '#ddd'; g.fillText(m.name, x + 9, 12); }
+  }
   if (S.markIn != null || S.markOut != null) {
     g.fillStyle = cs.getPropertyValue('--accent').trim();
     [S.markIn, S.markOut].forEach((m, i) => {
@@ -414,23 +442,46 @@ function drawRuler() {
 }
 
 // ── взаємодія ──
-let drag = null;
+// Виділення: клік — один елемент, Shift/Ctrl+клік — додати чи прибрати, рамка по порожньому місцю — кілька.
+// Перетягування: кліп під курсором («привид»), на його місці порожній контур, сусіди розсуваються й показують, де він опиниться.
+let drag = null, band = null, hud = null, lastEv = null, autoRaf = 0;
 const timeAt = e => (e.clientX - inner.getBoundingClientRect().left) / S.pps;
+const listOf = (P, kind) => ({ clip: P.clips, overlay: P.overlays, caption: P.captions, music: P.music }[kind] || []);
+const itemOf = (kind, id, P = S.project) => listOf(P, kind).find(x => x.id === id);
+const lockedItem = (kind, id) => { const o = itemOf(kind, id); return !o || laneLocked(laneOf(kind, o)); };
+
+// маркери на лінійці
+const MK_HIT = 7;
+const markerAt = e => {
+  const r = ruler.getBoundingClientRect(), x = e.clientX - r.left + scroll.scrollLeft;
+  let best = null, bd = MK_HIT;
+  for (const m of S.project.markers || []) { const d = Math.abs(m.t * S.pps - x); if (d <= bd) { bd = d; best = m; } }
+  return best;
+};
 
 function onDown(e) {
   if (e.button !== 0) return;
   const it = e.target.closest('.it');
   if (!it) {
-    // клік по лінійці або порожньому місцю — перемотування (і скидання виділення на доріжках)
-    if (e.target.closest('.lane')) select(null);
+    if (e.target.closest('.tl-ruler-wrap')) {
+      const mk = markerAt(e);
+      if (mk) { if (e.altKey) removeMarker(mk.id); else seek(mk.t); return; }
+      scrub(e);
+      return;
+    }
+    if (e.target.closest('.lane')) { startBand(e); return; }
     scrub(e);
     return;
   }
-  e.preventDefault();
   const kind = it.dataset.kind, id = it.dataset.id;
+  if (lockedItem(kind, id)) { startBand(e); return; } // доріжка заблокована: працює як порожнє місце
+  e.preventDefault();
+  const onHandle = e.target.classList.contains('h-l') || e.target.classList.contains('h-r');
+  if ((e.shiftKey || e.ctrlKey || e.metaKey) && !onHandle) { select(kind, id, 'toggle'); return; } // Shift за край кліпа — «стик», а не виділення
   select(kind, id);
   const mode = e.target.classList.contains('h-l') ? 'l' : e.target.classList.contains('h-r') ? 'r' : 'move';
-  drag = { kind, id, mode, x0: e.clientX, t0: timeAt(e), orig: structuredClone(S.project), moved: false, pointerId: e.pointerId };
+  const group = mode === 'move' ? S.multi.filter(x => !lockedItem(x.kind, x.id)).filter(x => (kind === 'clip') === (x.kind === 'clip')) : [{ kind, id }];
+  drag = { kind, id, mode, group: group.length ? group : [{ kind, id }], x0: e.clientX, t0: timeAt(e), orig: structuredClone(S.project), moved: false, pointerId: e.pointerId, left0: it.offsetLeft };
   inner.setPointerCapture(e.pointerId);
   inner.addEventListener('pointermove', onMove);
   inner.addEventListener('pointerup', onUp, { once: true });
@@ -446,20 +497,137 @@ function scrub(e) {
   inner.addEventListener('pointerup', () => inner.removeEventListener('pointermove', mv), { once: true });
 }
 
+// назва маркера: поле просто над лінійкою
+function editMarker(mk, e) {
+  const inp = document.createElement('input');
+  inp.className = 'mk-edit input'; inp.value = mk.name || ''; inp.placeholder = 'Назва маркера'; inp.maxLength = 60; inp.setAttribute('aria-label', 'Назва маркера');
+  const r = ruler.getBoundingClientRect();
+  Object.assign(inp.style, { left: Math.min(innerWidth - 190, e.clientX - 20) + 'px', top: r.bottom + 4 + 'px' });
+  document.body.appendChild(inp); inp.focus(); inp.select();
+  let done = false;
+  const fin = save => { if (done) return; done = true; const v = inp.value; inp.remove(); if (save) renameMarker(mk.id, v); };
+  inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') fin(false); });
+  inp.addEventListener('blur', () => fin(true));
+}
+
+// ── рамка виділення ──
+function startBand(e) {
+  band = { x0: e.clientX, y0: e.clientY, on: false, base: e.shiftKey || e.ctrlKey || e.metaKey ? S.multi.slice() : [], el: null, t0: timeAt(e), pointerId: e.pointerId };
+  inner.setPointerCapture(e.pointerId);
+  inner.addEventListener('pointermove', onBandMove);
+  inner.addEventListener('pointerup', onBandUp, { once: true });
+  inner.addEventListener('pointercancel', onBandUp, { once: true });
+}
+function bandHits() {
+  const r = band.rect, out = [];
+  lanes.querySelectorAll('.it').forEach(it => {
+    const b = it.getBoundingClientRect();
+    if (b.right < r.l || b.left > r.r || b.bottom < r.t || b.top > r.b) return;
+    if (lockedItem(it.dataset.kind, it.dataset.id)) return;
+    out.push({ kind: it.dataset.kind, id: it.dataset.id });
+  });
+  return out;
+}
+function onBandMove(e) {
+  if (!band) return;
+  if (!band.on && Math.hypot(e.clientX - band.x0, e.clientY - band.y0) < 4) return;
+  if (!band.on) {
+    band.on = true;
+    band.el = document.createElement('div'); band.el.className = 'tl-band'; document.body.appendChild(band.el);
+  }
+  const l = Math.min(band.x0, e.clientX), r = Math.max(band.x0, e.clientX), t = Math.min(band.y0, e.clientY), b = Math.max(band.y0, e.clientY);
+  band.rect = { l, r, t, b };
+  Object.assign(band.el.style, { left: l + 'px', top: t + 'px', width: r - l + 'px', height: b - t + 'px' });
+  const hits = bandHits(), ids = new Set([...band.base, ...hits].map(x => x.kind + ':' + x.id));
+  lanes.querySelectorAll('.it').forEach(it => it.classList.toggle('sel', ids.has(it.dataset.kind + ':' + it.dataset.id)));
+}
+function onBandUp(e) {
+  inner.removeEventListener('pointermove', onBandMove);
+  const b = band; band = null;
+  if (!b) return;
+  if (b.el) b.el.remove();
+  if (!b.on) { if (!b.base.length) select(null); seek(Math.max(0, snap(timeAt(e), null, 6))); return; } // простий клік по порожньому місцю: зняти виділення й перейти в цю мить
+  const hits = bandHits(), seen = new Set(b.base.map(x => x.kind + ':' + x.id)), all = [...b.base];
+  for (const h of hits) if (!seen.has(h.kind + ':' + h.id)) all.push(h);
+  selectMany(all);
+}
+
+// ── підказка біля курсора ──
+function showHud(text, e) {
+  if (!hud) { hud = document.createElement('div'); hud.className = 'tl-hud'; document.body.appendChild(hud); }
+  hud.textContent = text; hud.hidden = false;
+  hud.style.left = Math.min(innerWidth - 150, e.clientX + 16) + 'px';
+  hud.style.top = Math.max(8, e.clientY - 34) + 'px';
+}
+const hideHud = () => { if (hud) hud.hidden = true; };
+
+// ── початок і кінець перетягування ──
+function beginVisuals(e) {
+  document.body.classList.add('tl-dragging');
+  drag.srcEls = [...lanes.querySelectorAll('.it')].filter(el => drag.group.some(g => g.kind === el.dataset.kind && g.id === el.dataset.id));
+  if (drag.kind === 'clip' && drag.mode === 'move') {
+    const prim = drag.srcEls.find(el => el.dataset.id === drag.id) || drag.srcEls[0];
+    const g = document.createElement('div');
+    g.className = 'it clip tl-ghost';
+    g.innerHTML = prim.innerHTML;
+    const cs = prim.getBoundingClientRect(), ir = inner.getBoundingClientRect();
+    Object.assign(g.style, { left: cs.left - ir.left + 'px', top: cs.top - ir.top + 'px', width: cs.width + 'px', height: cs.height + 'px' });
+    if (drag.group.length > 1) { const n = document.createElement('b'); n.className = 'ghost-n'; n.textContent = drag.group.length + ' кліпи'; g.appendChild(n); }
+    inner.appendChild(g);
+    drag.ghost = g; drag.ghostLeft = cs.left - ir.left;
+    drag.srcEls.forEach(el => el.classList.add('drag-src'));
+  }
+  autoScroll();
+}
+function endVisuals(d) {
+  document.body.classList.remove('tl-dragging');
+  if (d && d.ghost) d.ghost.remove();
+  inner.querySelectorAll('.tl-ghost').forEach(g => g.remove());
+  lanes.querySelectorAll('.drag-src').forEach(el => { el.classList.remove('drag-src'); el.style.transform = ''; });
+  lanes.querySelectorAll('.it.clip').forEach(el => { el.style.transform = ''; el.classList.remove('shifted'); });
+  insertEl.hidden = true; hideHud(); cancelAnimationFrame(autoRaf); autoRaf = 0;
+}
+// біля краю таймлайну він прокручується сам
+function autoScroll() {
+  cancelAnimationFrame(autoRaf);
+  const step = () => {
+    if (!drag || !drag.moved || !lastEv) { autoRaf = 0; return; }
+    const r = scroll.getBoundingClientRect(), edge = 56;
+    let v = 0;
+    if (lastEv.clientX < r.left + edge) v = -Math.ceil((r.left + edge - lastEv.clientX) / 3);
+    else if (lastEv.clientX > r.right - edge) v = Math.ceil((lastEv.clientX - (r.right - edge)) / 3);
+    if (v) { const before = scroll.scrollLeft; scroll.scrollLeft += Math.max(-28, Math.min(28, v)); if (scroll.scrollLeft !== before) onMove(lastEv); }
+    autoRaf = requestAnimationFrame(step);
+  };
+  autoRaf = requestAnimationFrame(step);
+}
+function cancelDrag() {
+  if (!drag) return false;
+  const d = drag; drag = null;
+  inner.removeEventListener('pointermove', onMove);
+  S.altNoSnap = false; S.snapAt = null; showSnap(null);
+  endVisuals(d);
+  S.project = structuredClone(d.orig);
+  emit('project', {});
+  return true;
+}
 function onMove(e) {
   if (!drag) return;
+  lastEv = e;
   S.altNoSnap = e.altKey;
   if (!drag.moved && Math.abs(e.clientX - drag.x0) < 3) return;
-  drag.moved = true;
+  if (!drag.moved) { drag.moved = true; beginVisuals(e); }
   hoverEl.hidden = true;
   S.snapAt = null;
   const dt = timeAt(e) - drag.t0;
   const P = S.project = structuredClone(drag.orig);
-  if (drag.kind === 'clip') moveClip(P, dt, e);
-  else if (drag.kind === 'music') moveMusic(P, dt);
-  else moveTimed(P, drag.kind === 'overlay' ? P.overlays : P.captions, dt);
-  emit('project', { live: true });
+  let hudText = '';
+  if (drag.kind === 'clip') hudText = moveClip(P, dt, e);
+  else if (drag.kind === 'music') hudText = moveMusic(P, dt);
+  else hudText = moveTimed(P, drag.kind === 'overlay' ? P.overlays : P.captions, dt);
+  if (drag.kind !== 'clip' || drag.mode !== 'move') emit('project', { live: true });
   showSnap(S.snapAt);
+  if (hudText) showHud(hudText, e);
 }
 
 // край, що тягнеться: прилипає й запам'ятовує, куди, щоб показати напрямну
@@ -472,13 +640,25 @@ function snapBoth(start, dur, id) {
   if (d1 <= d2) { S.snapAt = h1; return h1; }
   S.snapAt = h2; return h2 - dur;
 }
+const durOf = (kind, o) => (kind === 'music' ? musicDur(o) : o.dur);
+const ids = () => drag.group.map(g => g.id);
 
+// текст, накладання, субтитри, музика: рухаються на екрані разом із курсором, групою — на однакову відстань
+function moveGroup(P, dt) {
+  const prim = itemOf(drag.kind, drag.id, drag.orig), pd = durOf(drag.kind, prim);
+  const start = Math.max(0, snapBoth(prim.start + dt, pd, ids()));
+  let d = start - prim.start;
+  const minStart = Math.min(...drag.group.map(g => itemOf(g.kind, g.id, drag.orig).start));
+  if (minStart + d < 0) d = -minStart;
+  for (const g of drag.group) { const o = itemOf(g.kind, g.id, P), og = itemOf(g.kind, g.id, drag.orig); if (o && og) o.start = Math.max(0, og.start + d); }
+  return `${fmt(Math.max(0, prim.start + d), true)}${drag.group.length > 1 ? ` · ${drag.group.length} елем.` : ''}`;
+}
 function moveTimed(P, list, dt) {
   const o = list.find(x => x.id === drag.id), orig = (drag.kind === 'overlay' ? drag.orig.overlays : drag.orig.captions).find(x => x.id === drag.id);
-  if (!o) return;
+  if (!o) return '';
   const end = orig.start + orig.dur;
-  if (drag.mode === 'move') o.start = Math.max(0, snapBoth(orig.start + dt, orig.dur, o.id));
-  else if (drag.mode === 'l') {
+  if (drag.mode === 'move') return moveGroup(P, dt);
+  if (drag.mode === 'l') {
     o.start = clamp(snapEdge(orig.start + dt, o.id), 0, end - 0.2);
     if (o.type === 'video') { // ліву межу відео поверх не можна тягнути раніше за його початок
       const nin = (orig.in || 0) + (o.start - orig.start);
@@ -490,41 +670,37 @@ function moveTimed(P, list, dt) {
     o.dur = Math.max(0.2, snapEdge(end + dt, o.id) - orig.start);
     if (o.type === 'video') { const m = media.get(o.mediaId); if (m) o.dur = Math.min(o.dur, m.duration - (o.in || 0)); }
   }
+  return `Тривалість ${fmt(o.dur, true)}`;
 }
-
 function moveMusic(P, dt) {
   const x = P.music.find(v => v.id === drag.id), orig = drag.orig.music.find(v => v.id === drag.id);
-  if (!x) return;
+  if (!x) return '';
   const m = media.get(x.mediaId), max = m ? m.duration : orig.out;
-  if (drag.mode === 'move') x.start = Math.max(0, snapBoth(orig.start + dt, musicDur(orig), x.id));
-  else if (drag.mode === 'l') {
+  if (drag.mode === 'move') return moveGroup(P, dt);
+  if (drag.mode === 'l') {
     let ns = snapEdge(orig.start + dt, x.id);
     let nin = orig.in + (ns - orig.start);
     if (nin < 0) { ns -= nin; nin = 0; }
     if (nin > orig.out - 0.2) { nin = orig.out - 0.2; ns = orig.start + (nin - orig.in); }
     x.in = nin; x.start = Math.max(0, ns);
   } else x.out = clamp(orig.out + (snapEdge(orig.start + musicDur(orig) + dt, x.id) - (orig.start + musicDur(orig))), orig.in + 0.2, max);
+  return `Тривалість ${fmt(musicDur(x), true)}`;
 }
 
+// кліпи основної доріжки
+const layoutOf = clips => { let t = 0; return clips.map(x => { const s = t; t += clipDur(x); return { id: x.id, s, e: t }; }); };
 function moveClip(P, dt, e) {
   const idx = P.clips.findIndex(c => c.id === drag.id);
-  if (idx < 0) return;
+  if (idx < 0) return '';
   const c = P.clips[idx], orig = drag.orig.clips[idx];
   const m = media.get(c.mediaId);
   const sp = c.speed || 1;
-  const L0 = (() => { let t = 0; return drag.orig.clips.map(x => { const s = t; t += clipDur(x); return { s, e: t }; }); })();
+  const L0 = layoutOf(drag.orig.clips);
   const oldEnd = L0[idx].e;
-  if (drag.mode === 'move') {
-    // переставлення кліпу: місце вставки за положенням курсора
-    const t = timeAt(e);
-    let target = drag.orig.clips.length;
-    for (let i = 0; i < L0.length; i++) { if (t < (L0[i].s + L0[i].e) / 2) { target = i; break; } }
-    drag.target = target;
-    const x = (target < L0.length ? L0[target].s : L0[L0.length - 1].e) * S.pps;
-    insertEl.hidden = target === idx || target === idx + 1;
-    insertEl.style.transform = `translateX(${x}px)`;
-    return;
-  }
+  if (drag.mode === 'move') return previewReorder(L0, e);
+  // Shift: «стик» — обидва сусідні кліпи змінюють межу, загальна тривалість не змінюється
+  const roll = e.shiftKey && ((drag.mode === 'r' && drag.orig.clips[idx + 1]) || (drag.mode === 'l' && idx > 0));
+  if (roll) return rollEdit(P, idx, dt);
   if (m && m.kind === 'image') {
     const d0 = orig.out - orig.in;
     const nd = drag.mode === 'r' ? Math.max(0.3, d0 + dt) : Math.max(0.3, d0 - dt);
@@ -540,6 +716,46 @@ function moveClip(P, dt, e) {
   const delta = clipDur(c) - clipDur(orig);
   if (drag.mode === 'l') rippleShift(L0[idx].s, delta);
   else rippleShift(oldEnd + Math.min(0, delta), delta);
+  return `Тривалість ${fmt(clipDur(c), true)}${delta ? ` (${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(1).replace('.', ',')} с)` : ''}`;
+}
+function rollEdit(P, idx, dt) {
+  const left = drag.mode === 'r' ? idx : idx - 1, a = P.clips[left], b = P.clips[left + 1];
+  const oa = drag.orig.clips[left], ob = drag.orig.clips[left + 1];
+  const ma = media.get(a.mediaId), mb = media.get(b.mediaId);
+  if (!ma || !mb || ma.kind === 'image' || mb.kind === 'image') return 'Стик працює лише для відео';
+  const sa = a.speed || 1, sb = b.speed || 1;
+  // зсув межі в секундах таймлайну: не далі, ніж дозволяють файли й мінімальна довжина обох кліпів
+  const maxR = Math.min((ma.duration - oa.out) / sa, (ob.out - ob.in - 0.1 * sb) / sb);
+  const maxL = Math.min((oa.out - oa.in - 0.1 * sa) / sa, ob.in / sb);
+  const d = clamp(dt, -maxL, maxR);
+  a.out = oa.out + d * sa; b.in = ob.in + d * sb;
+  const L = layoutOf(P.clips);
+  return `Стик ${fmt(L[left].e, true)} · ${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2).replace('.', ',')} с`;
+}
+// показуємо, куди стане перетягнутий кліп: сусіди розсуваються, на новому місці порожній контур
+function previewReorder(L0, e) {
+  const gset = new Set(ids()), t = timeAt(e);
+  const rest = drag.orig.clips.filter(c => !gset.has(c.id)), Lr = layoutOf(rest);
+  let target = rest.length;
+  for (let i = 0; i < Lr.length; i++) { if (t < (Lr[i].s + Lr[i].e) / 2) { target = i; break; } }
+  drag.target = target;
+  const moving = drag.orig.clips.filter(c => gset.has(c.id));
+  const order = [...rest.slice(0, target), ...moving, ...rest.slice(target)];
+  const Ln = layoutOf(order), newStart = new Map(Ln.map(x => [x.id, x.s]));
+  drag.newOrder = order.map(c => c.id);
+  lanes.querySelectorAll('.it.clip').forEach(el => {
+    const o = L0.find(x => x.id === el.dataset.id); if (!o) return;
+    const dx = (newStart.get(el.dataset.id) - o.s) * S.pps;
+    el.classList.add('shifted');
+    el.style.transform = dx ? `translateX(${dx}px)` : '';
+  });
+  // привид іде за курсором
+  if (drag.ghost) drag.ghost.style.transform = `translateX(${(timeAt(e) - drag.t0) * S.pps}px)`;
+  const first = Ln.find(x => x.id === moving[0].id);
+  insertEl.hidden = false;
+  insertEl.style.transform = `translateX(${first.s * S.pps}px)`;
+  const same = drag.newOrder.every((id, i) => id === drag.orig.clips[i].id);
+  return same ? 'Лишається на місці' : `Позиція ${target + 1} з ${order.length}`;
 }
 
 function onUp() {
@@ -547,16 +763,13 @@ function onUp() {
   if (!drag) return;
   const d = drag; drag = null;
   S.altNoSnap = false; S.snapAt = null; showSnap(null);
-  insertEl.hidden = true;
+  endVisuals(d);
   if (!d.moved) return;
   if (d.kind === 'clip' && d.mode === 'move') {
     S.project = structuredClone(d.orig);
-    const i = S.project.clips.findIndex(c => c.id === d.id);
-    let target = d.target ?? i;
-    if (target !== i && target !== i + 1) {
-      const [c] = S.project.clips.splice(i, 1);
-      if (target > i) target--;
-      S.project.clips.splice(target, 0, c);
+    if (d.newOrder) {
+      const byId = new Map(S.project.clips.map(c => [c.id, c]));
+      S.project.clips = d.newOrder.map(id => byId.get(id)).filter(Boolean);
     }
   }
   if (!commit()) emit('project', {});

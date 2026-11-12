@@ -527,6 +527,115 @@ await step('пошкоджений проєкт у базі не ламає за
   await p8.close(); assert.deepEqual(errs8, [], 'без винятків');
 });
 
+await step('доріжки: перетягування кліпа видно (привид, сусіди розсуваються, підказка), Esc скасовує, скасування повертає порядок', async () => {
+  const p9 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs9 = [];
+  p9.on('pageerror', e => errs9.push(e.message));
+  await p9.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p9.goto(`http://localhost:${port}/index.html`); await p9.waitForFunction(() => window.VideoCut);
+  await p9.setInputFiles('#fileInput', video); await p9.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p9.waitForTimeout(800);
+  await p9.evaluate(async () => { const V = window.VideoCut, { splitAt } = await import('./videocut-app/js/ops.js'); V.seek(4); splitAt(); V.seek(8); splitAt(); });
+  await p9.waitForTimeout(400);
+  const order = () => p9.evaluate(() => window.VideoCut.S.project.clips.map(c => Math.round(c.in)));
+  assert.deepEqual(await order(), [0, 4, 8]);
+  const b1 = await p9.locator('.tl-lanes .clip').nth(0).boundingBox();
+  await p9.mouse.move(b1.x + 60, b1.y + 25); await p9.mouse.down(); await p9.mouse.move(b1.x + 300, b1.y + 25, { steps: 5 }); await p9.mouse.move(b1.x + 560, b1.y + 25, { steps: 5 });
+  const mid = await p9.evaluate(() => ({ ghost: !!document.querySelector('.tl-ghost'), src: document.querySelectorAll('.it.drag-src').length, shifted: [...document.querySelectorAll('.it.clip.shifted')].filter(e => e.style.transform).length, hud: document.querySelector('.tl-hud')?.textContent, insert: !document.getElementById('tlInsert').hidden, cursor: getComputedStyle(document.querySelector('.it.clip')).cursor }));
+  assert.ok(mid.ghost, 'є привид кліпа під курсором'); assert.equal(mid.src, 1, 'на місці кліпа порожній контур'); assert.ok(mid.shifted >= 1, 'сусіди зсунулись'); assert.match(mid.hud, /Позиція 2 з 3/); assert.ok(mid.insert, 'є лінія місця вставки'); assert.equal(mid.cursor, 'grabbing');
+  await p9.mouse.up(); await p9.waitForTimeout(300);
+  assert.deepEqual(await order(), [4, 0, 8], 'порядок змінився'); assert.equal(await p9.locator('.tl-ghost').count(), 0, 'привид прибрано');
+  await p9.keyboard.press('Control+z'); assert.deepEqual(await order(), [0, 4, 8], 'скасування повертає порядок');
+  const b3 = await p9.locator('.tl-lanes .clip').nth(2).boundingBox();
+  await p9.mouse.move(b3.x + 40, b3.y + 25); await p9.mouse.down(); await p9.mouse.move(b3.x - 400, b3.y + 25, { steps: 6 });
+  await p9.keyboard.press('Escape'); await p9.mouse.up(); await p9.waitForTimeout(300);
+  assert.deepEqual(await order(), [0, 4, 8], 'Esc скасував перетягування'); assert.equal(await p9.locator('.tl-ghost').count(), 0);
+  await p9.close(); assert.deepEqual(errs9, []);
+});
+
+await step('виділення кількох: Shift-клік, Ctrl+A, рамка, групове видалення й дублювання, блокування доріжки', async () => {
+  const p10 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  p10.on('pageerror', e => errs.push(e.message));
+  await p10.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p10.goto(`http://localhost:${port}/index.html`); await p10.waitForFunction(() => window.VideoCut);
+  await p10.setInputFiles('#fileInput', video); await p10.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p10.waitForTimeout(800);
+  await p10.evaluate(async () => { const V = window.VideoCut, { splitAt } = await import('./videocut-app/js/ops.js'); V.seek(3); splitAt(); V.seek(6); splitAt(); V.seek(9); splitAt(); });
+  await p10.waitForTimeout(400);
+  const n = () => p10.evaluate(() => window.VideoCut.S.project.clips.length), sel = () => p10.evaluate(() => window.VideoCut.S.multi.length);
+  assert.equal(await n(), 4);
+  await p10.locator('.tl-lanes .clip').nth(0).click(); await p10.locator('.tl-lanes .clip').nth(2).click({ modifiers: ['Shift'] });
+  assert.equal(await sel(), 2, 'Shift-клік додає до виділення');
+  await p10.locator('.tl-lanes .clip').nth(2).click({ modifiers: ['Shift'] });
+  assert.equal(await sel(), 1, 'Shift-клік по виділеному знімає його');
+  await p10.keyboard.press('Control+a'); assert.equal(await sel(), 4, 'Ctrl+A виділяє все');
+  await p10.keyboard.press('Control+d'); assert.equal(await n(), 8, 'групове дублювання');
+  await p10.keyboard.press('Control+z'); assert.equal(await n(), 4);
+  // блокування: Delete нічого не видаляє, клік не виділяє
+  await p10.click('.head-v .th-lock'); await p10.waitForTimeout(150);
+  await p10.keyboard.press('Control+a'); assert.equal(await sel(), 0, 'на заблокованій доріжці нічого не виділяється');
+  await p10.locator('.tl-lanes .clip').nth(1).click({ force: true }); await p10.keyboard.press('Delete'); assert.equal(await n(), 4, 'заблокована доріжка не змінюється');
+  await p10.click('.head-v .th-lock'); await p10.waitForTimeout(150);
+  await p10.keyboard.press('Control+a'); await p10.keyboard.press('Delete'); assert.equal(await n(), 0, 'групове видалення');
+  await p10.keyboard.press('Control+z'); assert.equal(await n(), 4);
+  assert.ok(await p10.evaluate(() => window.VideoCut.S.project.tracks.v.lock === false), 'стан блокування в проєкті');
+  await p10.close(); assert.deepEqual(errs, []);
+});
+
+await step('керування доріжками: сховати прибирає кадр із перегляду, звук вимикається й соло, стан зберігається в проєкті', async () => {
+  const p11 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  p11.on('pageerror', e => errs.push(e.message));
+  await p11.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p11.goto(`http://localhost:${port}/index.html`); await p11.waitForFunction(() => window.VideoCut);
+  await p11.setInputFiles('#fileInput', [ramp, audio]); await p11.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p11.waitForTimeout(1200);
+  await p11.evaluate(() => window.VideoCut.seek(4)); await p11.waitForTimeout(700);
+  const px = () => p11.evaluate(() => { const c = document.getElementById('pv'), g = c.getContext('2d', { willReadFrequently: true }); const d = g.getImageData(c.width >> 1, c.height >> 1, 1, 1).data; return d[0] + d[1] + d[2]; });
+  assert.ok(await px() > 100, 'кадр видно');
+  await p11.click('.head-v .th-hide'); await p11.waitForTimeout(500);
+  assert.ok(await px() < 10, 'сховане основне відео не малюється: ' + await px());
+  await p11.click('.head-v .th-hide'); await p11.waitForTimeout(500); assert.ok(await px() > 100);
+  const aud = () => p11.evaluate(async () => { const s = await import('./videocut-app/js/state.js'); return { v: s.laneAudible('v'), a: s.laneAudible('a') }; });
+  await p11.click('.head-a .th-mute'); assert.deepEqual(await aud(), { v: true, a: false }, 'звук музики вимкнено');
+  await p11.click('.head-a .th-mute'); await p11.click('.head-a .th-solo'); assert.deepEqual(await aud(), { v: false, a: true }, 'соло звуку глушить решту');
+  await p11.click('.head-a .th-solo'); assert.deepEqual(await aud(), { v: true, a: true });
+  await p11.click('.head-v .th-mute');
+  const saved = await p11.evaluate(() => JSON.parse(JSON.stringify(window.VideoCut.S.project.tracks)));
+  assert.equal(saved.v.mute, true); assert.ok(await p11.locator('.head-v .th-mute.on').count());
+  await p11.close(); assert.deepEqual(errs, []);
+});
+
+await step('маркери: M ставить і прибирає, «.» і «,» переходять між ними, прилипання до маркера, зберігаються в проєкті', async () => {
+  const p12 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  p12.on('pageerror', e => errs.push(e.message));
+  await p12.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p12.goto(`http://localhost:${port}/index.html`); await p12.waitForFunction(() => window.VideoCut);
+  await p12.setInputFiles('#fileInput', video); await p12.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p12.waitForTimeout(800);
+  const mk = () => p12.evaluate(() => window.VideoCut.S.project.markers.map(m => m.t));
+  await p12.evaluate(() => window.VideoCut.seek(2)); await p12.keyboard.press('m');
+  await p12.evaluate(() => window.VideoCut.seek(7)); await p12.keyboard.press('m');
+  assert.deepEqual(await mk(), [2, 7]);
+  await p12.evaluate(() => window.VideoCut.seek(0)); await p12.keyboard.press('.'); assert.equal(await p12.evaluate(() => window.VideoCut.S.t), 2);
+  await p12.keyboard.press('.'); assert.equal(await p12.evaluate(() => window.VideoCut.S.t), 7); await p12.keyboard.press(',');  assert.equal(await p12.evaluate(() => window.VideoCut.S.t), 2);
+  await p12.keyboard.press('m'); assert.deepEqual(await mk(), [7], 'повторне M на маркері прибирає його');
+  assert.ok(await p12.evaluate(async () => { const s = await import('./videocut-app/js/state.js'); return s.snapPoints().includes(7); }), 'маркер у точках прилипання');
+  await p12.close(); assert.deepEqual(errs, []);
+});
+
+await step('обрізка «стик» (Shift): межа двох кліпів зсувається, загальна тривалість не змінюється', async () => {
+  const p13 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  p13.on('pageerror', e => errs.push(e.message));
+  await p13.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p13.goto(`http://localhost:${port}/index.html`); await p13.waitForFunction(() => window.VideoCut);
+  await p13.setInputFiles('#fileInput', video); await p13.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p13.waitForTimeout(800);
+  await p13.evaluate(async () => { const V = window.VideoCut, { splitAt } = await import('./videocut-app/js/ops.js'); V.seek(5); splitAt(); });
+  await p13.waitForTimeout(400);
+  const st = () => p13.evaluate(() => ({ d: +window.VideoCut.duration().toFixed(2), c: window.VideoCut.S.project.clips.map(c => [+c.in.toFixed(2), +c.out.toFixed(2)]) }));
+  const before = await st();
+  const b = await p13.locator('.tl-lanes .clip').nth(0).boundingBox();
+  await p13.locator('.tl-lanes .clip').nth(0).click();
+  await p13.keyboard.down('Shift'); await p13.mouse.move(b.x + b.width - 2, b.y + 25); await p13.mouse.down(); await p13.mouse.move(b.x + b.width - 90, b.y + 25, { steps: 6 }); await p13.mouse.up(); await p13.keyboard.up('Shift');
+  const after = await st();
+  assert.equal(after.d, before.d, 'тривалість не змінилась'); assert.ok(after.c[0][1] < before.c[0][1], 'перший кліп коротший'); assert.ok(after.c[1][0] < before.c[1][0] + 0.001 && after.c[1][0] < before.c[1][0], 'другий почався раніше: ' + JSON.stringify(after.c));
+  await p13.close(); assert.deepEqual(errs, []);
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

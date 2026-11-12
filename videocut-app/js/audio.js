@@ -2,7 +2,7 @@
 // Швидкість кліпу змінюється без зміни тону (granular overlap-add).
 import { AudioBufferSink } from '../vendor/mediabunny.min.mjs';
 import { SR, GRAIN, HOP, CHAIN, SEARCH, WIN, alignGrains } from './stretch.js';
-import { S, media, layout, musicDur } from './state.js';
+import { S, media, layout, musicDur, laneAudible } from './state.js';
 import { fadeAlpha } from './render.js';
 import { duckEnvelope } from './duck.js';
 
@@ -48,18 +48,18 @@ function segments(t0, t1, src = null) {
   for (const l of layout()) {
     if (l.end <= t0 || l.start >= t1) continue;
     const c = l.clip, m = media.get(c.mediaId);
-    if (!m || !m.at || !m.canDecodeA || c.muted || (c.volume ?? 1) <= 0 || !want('main', c.id)) continue;
+    if (!m || !m.at || !m.canDecodeA || c.muted || !laneAudible('v') || (c.volume ?? 1) <= 0 || !want('main', c.id)) continue;
     out.push({ m, start: l.start, end: l.end, srcIn: c.in, speed: c.speed || 1, vol: c.volume ?? 1, fin: c.fadeIn || 0, fout: c.fadeOut || 0 });
   }
   for (const mu of S.project.music) {
-    if (!want(mu.voice ? 'voice' : 'music', mu.id)) continue;
+    if (!want(mu.voice ? 'voice' : 'music', mu.id) || !laneAudible('a')) continue;
     const m = media.get(mu.mediaId);
     const d = musicDur(mu);
     if (!m || !m.at || !m.canDecodeA || mu.start + d <= t0 || mu.start >= t1) continue;
     out.push({ m, start: mu.start, end: mu.start + d, srcIn: mu.in, speed: 1, vol: mu.volume ?? 1, fin: mu.fadeIn || 0, fout: mu.fadeOut || 0, duck: !src && !!mu.duck });
   }
   for (const o of S.project.overlays) {
-    if (o.type !== 'video' || o.muted || (o.volume ?? 1) <= 0 || !want('layers', o.id)) continue;
+    if (o.type !== 'video' || o.muted || !laneAudible('v2') || (o.volume ?? 1) <= 0 || !want('layers', o.id)) continue;
     const m = media.get(o.mediaId);
     if (!m || !m.at || !m.canDecodeA || o.start + o.dur <= t0 || o.start >= t1) continue;
     out.push({ m, start: o.start, end: o.start + Math.min(o.dur, m.duration - (o.in || 0)), srcIn: o.in || 0, speed: 1, vol: o.volume ?? 1, fin: 0, fout: 0 });

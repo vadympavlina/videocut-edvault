@@ -1,8 +1,8 @@
 // Малювання кадру сцени — однаково для перегляду й експорту.
 // provider(layoutItem, sourceTime) → {src: CanvasImageSource | VideoSample, w, h} | null
-import { S, media, layout, clipAt, srcTime } from './state.js';
+import { S, media, layout, clipAt, srcTime, laneVisible } from './state.js';
 import { capStyle, drawCaption, capState, capBox } from './cc.js';
-import { drawLayer } from './layer.js';
+import { drawLayer, isLayer } from './layer.js';
 import { tailFrame } from './media.js';
 
 export const FONT_STACK = "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -343,7 +343,7 @@ export function renderScene(ctx, W, H, t, provider, L = layout(), opts = {}) {
   ctx.fillStyle = p.bg || '#000000';
   ctx.fillRect(0, 0, W, H);
   const l = clipAt(t, L);
-  if (l) {
+  if (l && laneVisible('v')) {
     const f = provider(l, srcTime(l, t));
     const tr = l.clip.tr;
     const idx = tr ? L.indexOf(l) : -1;
@@ -356,11 +356,12 @@ export function renderScene(ctx, W, H, t, provider, L = layout(), opts = {}) {
   }
   for (const o of p.overlays) {
     if (t < o.start || t >= o.start + o.dur) continue;
+    if (!laneVisible(isLayer(o) ? 'v2' : 'ov')) continue;
     const frame = o.type === 'video' && opts.ovFrame ? opts.ovFrame(o, (o.in || 0) + (t - o.start)) : null;
     drawAnimated(ctx, o, W, H, k, t, opts.editing, frame);
   }
   capBox.id = null;
-  const cap = p.captions.find(c => t >= c.start && t < c.start + c.dur);
+  const cap = laneVisible('cc') ? p.captions.find(c => t >= c.start && t < c.start + c.dur) : null;
   if (cap && cap.text.trim()) {
     const st = capStyle(p);
     // «не вшивати у відео»: у перегляді — напівпрозорі, в експорті їх немає
@@ -436,7 +437,7 @@ export function staticKey(t, L) {
   const p = S.project;
   const l = clipAt(t, L);
   let key = 'bg';
-  if (l) {
+  if (l && laneVisible('v')) {
     const c = l.clip, m = media.get(c.mediaId);
     if (!m || m.kind !== 'image') return null;
     if (c.motion && c.motion !== 'none') return null;
@@ -447,6 +448,7 @@ export function staticKey(t, L) {
   }
   for (const o of p.overlays) {
     if (t < o.start || t >= o.start + o.dur) continue;
+    if (!laneVisible(isLayer(o) ? 'v2' : 'ov')) continue;
     if (o.type === 'video' || o.type === 'progress') return null;
     const anim = animOf(o);
     if (anim !== 'none') {
@@ -455,7 +457,7 @@ export function staticKey(t, L) {
     }
     key += '|' + o.id;
   }
-  const cap = p.captions.find(c => t >= c.start && t < c.start + c.dur);
+  const cap = laneVisible('cc') ? p.captions.find(c => t >= c.start && t < c.start + c.dur) : null;
   if (cap) { const s = capState(cap, t, capStyle(p)); if (s === null) return null; key += '|' + s; }
   return key;
 }

@@ -978,3 +978,48 @@ body.picking-key #pv, body.picking-key #pvLayer { cursor: crosshair !important; 
 
 input[type=range]{min-height:24px}
 .sw{min-width:24px;min-height:24px}
+
+/* ════════════ Доріжки: заголовки з керуванням, перетягування, рамка виділення, маркери ════════════ */
+.tl-heads{width:156px}
+.head{padding:0 6px 0 9px;gap:6px}
+.head .th-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.th-btns{display:flex;gap:1px;flex-shrink:0}
+.th-b{width:22px;height:22px;border-radius:5px;display:grid;place-items:center;color:var(--muted);font-size:10.5px;font-weight:700;opacity:.8}
+.th-b .ico{width:14px;height:14px;color:inherit}
+.th-b:hover{background:var(--surface3);color:var(--text);opacity:1}
+.th-b.on{color:var(--on-accent);background:var(--accent);opacity:1}
+.th-b.th-lock.on{background:var(--danger);color:#fff}
+.th-b.th-hide.on,.th-b.th-mute.on{background:var(--surface3);color:var(--danger)}
+.th-b.th-solo b{font-size:11px}
+.head.is-hidden .th-n,.head.is-hidden>.ico{opacity:.45;text-decoration:line-through}
+.head.is-locked .th-n::after{content:' ·  заблоковано';color:var(--danger);font-weight:500;font-size:10.5px}
+@media(max-width:640px){.tl-heads{width:96px}.head .th-n{display:none}.th-btns{flex-wrap:wrap;width:48px}}
+
+/* стани доріжок */
+.lane.is-hidden .it{opacity:.3;filter:grayscale(1)}
+.lane.is-locked{background-image:repeating-linear-gradient(135deg,transparent 0 8px,color-mix(in srgb,var(--danger) 9%,transparent) 8px 16px)}
+.lane.is-locked .it{cursor:not-allowed;opacity:.75}
+.lane.is-locked .it .h{display:none}
+
+/* виділення: головний елемент із білим кільцем, решта групи з акцентним */
+.it.sel{box-shadow:0 0 0 2px var(--accent),0 0 0 4px var(--surface)!important}
+.it.sel.main{box-shadow:0 0 0 2px var(--text),0 0 0 4px var(--surface)!important}
+.tl-band{position:fixed;z-index:700;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent);pointer-events:none;border-radius:2px}
+
+/* перетягування: привид під курсором, порожній контур на новому місці, сусіди розсуваються */
+body.tl-dragging,body.tl-dragging .it{cursor:grabbing!important}
+body.tl-dragging .it .h{cursor:inherit}
+.it.clip.shifted{transition:transform .14s cubic-bezier(.2,.7,.3,1)}
+.it.drag-src{opacity:.5;outline:2px dashed var(--accent);outline-offset:-2px;box-shadow:none!important;filter:none}
+.it.drag-src>*{visibility:hidden}
+.tl-ghost{z-index:9;pointer-events:none;box-shadow:0 10px 26px rgba(0,0,0,.55),0 0 0 2px var(--accent)!important;opacity:.94;cursor:grabbing;transform-origin:center;outline:0}
+.tl-ghost .ghost-n{position:absolute;right:6px;top:6px;padding:1px 7px;border-radius:9px;background:var(--accent);color:var(--on-accent);font-size:11px}
+.tl-hud{position:fixed;z-index:710;padding:4px 9px;border-radius:6px;background:var(--float-bg);color:var(--float-text);font:600 12px 'IBM Plex Sans',system-ui,sans-serif;font-variant-numeric:tabular-nums;pointer-events:none;box-shadow:var(--shadow-md);white-space:nowrap}
+.tl-insert{width:3px;background:var(--accent);box-shadow:0 0 0 1px var(--surface),0 0 10px var(--accent)}
+
+/* маркери */
+.mk-line{position:absolute;top:0;bottom:0;width:1px;margin-left:-.5px;background:color-mix(in srgb,var(--cc) 55%,transparent);pointer-events:none;z-index:2}
+.mk-edit{position:fixed;z-index:720;width:180px;height:30px}
+.head-v,.head-v2{flex-wrap:wrap;align-content:center;row-gap:2px}
+.head-v .th-n,.head-v2 .th-n{flex:1 1 60px}
+.head-v .th-btns,.head-v2 .th-btns{width:100%;margin-left:-3px}

@@ -1,5 +1,5 @@
 // Операції редагування — кожна змінює проєкт і записує крок в історію.
-import { S, media, uid, emit, layout, clipAt, srcTime, clipDur, musicDur, mainEnd, duration, commit, select, findSel, rippleShift, outputSize, ASPECTS } from './state.js';
+import { S, media, uid, emit, layout, clipAt, srcTime, clipDur, musicDur, mainEnd, duration, commit, select, selectMany, findSel, rippleShift, outputSize, ASPECTS, laneOf, laneLocked } from './state.js';
 import { applyLayout } from './layer.js';
 import { seek } from './player.js';
 import { toast } from './ui.js';
@@ -80,37 +80,50 @@ export function splitAt(t = S.t) {
 }
 
 // ── видалення ──
+// список виділених елементів у вигляді { kind, id, o } без елементів на заблокованих доріжках
+function selectedItems() {
+  const lists = { clip: S.project.clips, overlay: S.project.overlays, caption: S.project.captions, music: S.project.music };
+  // S.multi може відстати, якщо головний елемент задали напряму: тоді працюємо лише з ним
+  const src = S.multi.length && (!S.sel || S.multi.some(x => x.kind === S.sel.kind && x.id === S.sel.id)) ? S.multi : (S.sel ? [S.sel] : []);
+  return src.map(x => ({ kind: x.kind, id: x.id, o: (lists[x.kind] || []).find(o => o.id === x.id) })).filter(x => x.o && !laneLocked(laneOf(x.kind, x.o)));
+}
+export const selectedCount = () => selectedItems().length;
+
 export function deleteSel() {
-  const s = S.sel, o = findSel();
-  if (!s || !o) return false;
+  const items = selectedItems();
+  if (!items.length) return false;
   const p = S.project;
-  if (s.kind === 'clip') {
-    const l = layout().find(x => x.clip.id === o.id);
+  // кліпи видаляємо з кінця, щоб зсув наступних не збивав місця попередніх
+  const clips = items.filter(x => x.kind === 'clip').sort((a, b) => p.clips.indexOf(b.o) - p.clips.indexOf(a.o));
+  for (const { o } of clips) {
+    const l = layout().find(x => x.clip.id === o.id); if (!l) continue;
     p.clips = p.clips.filter(c => c.id !== o.id);
     rippleShift(l.start, -(l.end - l.start));
     if (S.t > l.start) seek(Math.max(l.start, S.t - (l.end - l.start)));
-    emit('did-cut');
-  } else if (s.kind === 'overlay') p.overlays = p.overlays.filter(x => x.id !== o.id);
-  else if (s.kind === 'caption') p.captions = p.captions.filter(x => x.id !== o.id);
-  else if (s.kind === 'music') p.music = p.music.filter(x => x.id !== o.id);
+  }
+  if (clips.length) emit('did-cut');
+  const ids = new Set(items.map(x => x.id));
+  p.overlays = p.overlays.filter(x => !ids.has(x.id));
+  p.captions = p.captions.filter(x => !ids.has(x.id));
+  p.music = p.music.filter(x => !ids.has(x.id));
   select(null);
   commit();
   return true;
 }
 
 export function duplicateSel() {
-  const s = S.sel, o = findSel();
-  if (!o) return;
-  const p = S.project;
-  const copy = { ...structuredClone(o), id: uid(o.id[0]) };
-  if (s.kind === 'clip') p.clips.splice(p.clips.indexOf(o) + 1, 0, copy);
-  else if (s.kind === 'music') { copy.start = o.start + musicDur(o); p.music.push(copy); }
-  else {
-    copy.start = o.start + o.dur;
-    (s.kind === 'overlay' ? p.overlays : p.captions).push(copy);
+  const items = selectedItems();
+  if (!items.length) return;
+  const p = S.project, made = [];
+  for (const { kind, o } of items) {
+    const copy = { ...structuredClone(o), id: uid(o.id[0]) };
+    if (kind === 'clip') p.clips.splice(p.clips.indexOf(o) + 1, 0, copy);
+    else if (kind === 'music') { copy.start = o.start + musicDur(o); p.music.push(copy); }
+    else { copy.start = o.start + o.dur; (kind === 'overlay' ? p.overlays : p.captions).push(copy); }
+    made.push({ kind, id: copy.id });
   }
   commit();
-  select(s.kind, copy.id);
+  selectMany(made);
 }
 
 // ── вирізання діапазону [a, b) з основної доріжки ──
@@ -406,37 +419,63 @@ export async function freezeFrame(dur = 3) {
 }
 
 // ── копіювати / вирізати / вставити ──
-let clipboard = null; // { kind, item }
+let clipboard = null; // { items: [{ kind, item }], base }
 export const canPaste = () => !!clipboard;
+const startOf = (kind, o) => (kind === 'clip' ? (layout().find(x => x.clip.id === o.id) || { start: 0 }).start : o.start);
 export function copySel(cut = false) {
-  const o = findSel(), s = S.sel;
-  if (!o || !s) { toast('Спочатку виділіть елемент на таймлайні'); return false; }
-  clipboard = { kind: s.kind, item: structuredClone(o) };
+  const items = selectedItems();
+  if (!items.length) { toast('Спочатку виділіть елемент на таймлайні'); return false; }
+  clipboard = { items: items.map(({ kind, o }) => ({ kind, item: structuredClone(o), at: startOf(kind, o) })), base: Math.min(...items.map(({ kind, o }) => startOf(kind, o))) };
   if (cut) { deleteSel(); toast('Вирізано — Ctrl+V вставить у позиції курсора'); }
-  else toast('Скопійовано — Ctrl+V вставить у позиції курсора');
+  else toast(items.length > 1 ? `Скопійовано елементів: ${items.length}. Ctrl+V вставить у позиції курсора` : 'Скопійовано — Ctrl+V вставить у позиції курсора');
   return true;
 }
 export function pasteClip() {
   if (!clipboard) { toast('Нічого вставляти — спершу скопіюйте елемент (Ctrl+C)'); return false; }
-  const { kind, item } = clipboard, p = S.project;
-  const copy = { ...structuredClone(item), id: uid(item.id[0]) };
-  if (kind !== 'caption' && item.mediaId && !media.has(item.mediaId)) { toast('Файл цього елемента вже прибрано з проєкту', 'err'); return false; }
-  if (kind === 'clip') {
-    delete copy.tr;
-    // вставляємо на межу кліпу, найближчу до курсора
+  const p = S.project, made = [];
+  const usable = clipboard.items.filter(({ kind, item }) => kind === 'caption' || !item.mediaId || media.has(item.mediaId));
+  if (!usable.length) { toast('Файл цього елемента вже прибрано з проєкту', 'err'); return false; }
+  const clips = usable.filter(x => x.kind === 'clip');
+  if (clips.length) {
+    // кліпи вставляємо блоком на межу, найближчу до курсора
     const L = layout();
     let idx = p.clips.length;
     const cur = L.find(x => S.t >= x.start && S.t < x.end);
     if (cur) { const i = L.indexOf(cur); idx = S.t - cur.start < cur.end - S.t ? i : i + 1; }
     const at = idx < L.length ? L[idx].start : mainEnd();
-    p.clips.splice(idx, 0, copy);
-    rippleShift(at, clipDur(copy));
-  } else {
-    copy.start = Math.max(0, S.t);
-    (kind === 'overlay' ? p.overlays : kind === 'caption' ? p.captions : p.music).push(copy);
-    if (kind === 'caption') p.captions.sort((a, b) => a.start - b.start);
+    const copies = clips.map(({ item }) => { const c = { ...structuredClone(item), id: uid(item.id[0]) }; delete c.tr; return c; });
+    p.clips.splice(idx, 0, ...copies);
+    rippleShift(at, copies.reduce((s, c) => s + clipDur(c), 0));
+    copies.forEach(c => made.push({ kind: 'clip', id: c.id }));
   }
+  for (const { kind, item, at } of usable) {
+    if (kind === 'clip') continue;
+    const copy = { ...structuredClone(item), id: uid(item.id[0]) };
+    copy.start = Math.max(0, S.t + (at - clipboard.base));
+    (kind === 'overlay' ? p.overlays : kind === 'caption' ? p.captions : p.music).push(copy);
+    made.push({ kind, id: copy.id });
+  }
+  p.captions.sort((a, b) => a.start - b.start);
   commit();
-  select(kind, copy.id);
+  selectMany(made);
   return true;
+}
+
+// ── маркери ──
+export function addMarker(t = S.t) {
+  const p = S.project; p.markers = p.markers || [];
+  const at = Math.round(Math.max(0, t) * 100) / 100;
+  if (p.markers.some(m => Math.abs(m.t - at) < 0.02)) { toast('Маркер у цьому місці вже є'); return null; }
+  const m = { id: uid('m'), t: at, name: '' };
+  p.markers.push(m); p.markers.sort((a, b) => a.t - b.t);
+  commit();
+  return m;
+}
+export function removeMarker(id) { const p = S.project; p.markers = (p.markers || []).filter(m => m.id !== id); commit(); }
+export function renameMarker(id, name) { const m = (S.project.markers || []).find(x => x.id === id); if (m) { m.name = String(name || '').slice(0, 60); commit(); } }
+export function jumpMarker(dir) {
+  const ms = (S.project.markers || []).map(m => m.t).sort((a, b) => a - b);
+  const eps = 0.01, n = dir > 0 ? ms.find(x => x > S.t + eps) : [...ms].reverse().find(x => x < S.t - eps);
+  if (n == null) { toast(dir > 0 ? 'Далі маркерів немає' : 'Раніше маркерів немає'); return false; }
+  seek(n); return true;
 }

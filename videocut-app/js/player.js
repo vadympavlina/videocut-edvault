@@ -1,5 +1,5 @@
 // Перегляд: відтворення через <video>/<audio> з синхронізацією за таймлайном.
-import { S, media, emit, on, layout, clipAt, srcTime, duration, musicDur, outputSize } from './state.js';
+import { S, media, emit, on, layout, clipAt, srcTime, duration, musicDur, outputSize, laneAudible } from './state.js';
 import { capStyle, loadCcFont, onCcFont } from './cc.js';
 import { renderScene, fadeAlpha } from './render.js';
 import { duckGain } from './duck.js';
@@ -14,6 +14,7 @@ let seekPending = new Set();
 export function initPlayer(cv) {
   canvas = cv;
   ctx = canvas.getContext('2d');
+  on('tracks', () => { if (S.playing) syncElements(false); requestDraw(); });
   on('project', () => { if (S.project.captions.length) loadCcFont(capStyle(S.project)); if (!S.playing) requestDraw(); });
   onCcFont(() => { if (!S.playing) requestDraw(); });
   on('media', () => { if (!S.playing) requestDraw(); });
@@ -291,7 +292,7 @@ function syncElements(hard, L = layout()) {
       v.preservesPitch = true;
       const drift = Math.abs(v.currentTime - st);
       if (hard || drift > 0.25 || v.paused && drift > 0.05) v.currentTime = st;
-      const vol = c.muted ? 0 : (c.volume ?? 1) * fadeAlpha(t, l.start, l.end - l.start, c.fadeIn || 0, c.fadeOut || 0);
+      const vol = c.muted || !laneAudible('v') ? 0 : (c.volume ?? 1) * fadeAlpha(t, l.start, l.end - l.start, c.fadeIn || 0, c.fadeOut || 0);
       setVolume(v, vol);
       if (v.paused) v.play().catch(() => {});
     }
@@ -301,7 +302,7 @@ function syncElements(hard, L = layout()) {
     const st = (o.in || 0) + (t - o.start);
     active.add(v);
     if (hard || Math.abs(v.currentTime - st) > 0.25) v.currentTime = st;
-    setVolume(v, o.muted ? 0 : (o.volume ?? 1));
+    setVolume(v, o.muted || !laneAudible('v2') ? 0 : (o.volume ?? 1));
     if (v.paused) v.play().catch(() => {});
   }
   for (const mu of S.project.music) {
@@ -312,7 +313,7 @@ function syncElements(hard, L = layout()) {
     const a = m.el, st = mu.in + (t - mu.start);
     active.add(a);
     if (hard || Math.abs(a.currentTime - st) > 0.3) a.currentTime = st;
-    setVolume(a, (mu.volume ?? 1) * fadeAlpha(t, mu.start, md, mu.fadeIn || 0, mu.fadeOut || 0) * (mu.duck ? duckGain(t) : 1));
+    setVolume(a, !laneAudible('a') ? 0 : (mu.volume ?? 1) * fadeAlpha(t, mu.start, md, mu.fadeIn || 0, mu.fadeOut || 0) * (mu.duck ? duckGain(t) : 1));
     if (a.paused) a.play().catch(() => {});
   }
   media.forEach(m => { if (m.el && m.el.pause && !active.has(m.el) && !m.el.paused && !(prep && prep.el === m.el)) m.el.pause(); });

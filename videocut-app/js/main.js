@@ -1,11 +1,11 @@
 // Точка входу відеоредактора Edvault.
-import { S, repairProject, outputSize, media, on, emit, commit, undo, redo, canUndo, canRedo, select, duration, layout, newProject, resetHistory, editPoints } from './state.js';
+import { S, selectMany, laneOf, laneLocked, repairProject, outputSize, media, on, emit, commit, undo, redo, canUndo, canRedo, select, duration, layout, newProject, resetHistory, editPoints } from './state.js';
 import { addMedia, removeMedia, reviveMedia, removedMedia, purgeRemoved } from './media.js';
 import { initPlayer, resizeCanvas, seek, toggle, pause, play, snapshot, requestDraw } from './player.js';
 import { initTimeline, render as renderTimeline, zoomBy, zoomFit, setZoom } from './timeline.js';
 import { initLibrary, initInspector, importCaptionFile, showTab, showProject } from './panels.js';
 import { initPreviewLayer, renderHandles } from './preview.js';
-import { addToTimeline, addOverlay, splitAt, deleteSel, duplicateSel, copySel, pasteClip, canPaste, cutRange, addCaption, normalizeSel, transitionsAll, addTitleCard, addLayerAt, TEXT_PRESETS, CARD_STYLES } from './ops.js';
+import { addMarker, removeMarker, jumpMarker, addToTimeline, addOverlay, splitAt, deleteSel, duplicateSel, copySel, pasteClip, canPaste, cutRange, addCaption, normalizeSel, transitionsAll, addTitleCard, addLayerAt, TEXT_PRESETS, CARD_STYLES } from './ops.js';
 import { initMenu } from './menu.js';
 import { initCtx } from './ctxmenu.js';
 import { toSrt, toVtt } from './srt.js';
@@ -232,6 +232,7 @@ document.addEventListener('keydown', e => {
   if (mod && e.code === 'KeyE') { e.preventDefault(); openExport(); return; }
   if (mod && e.code === 'KeyS') { e.preventDefault(); saveNow(); toast('Проєкт збережено в цьому браузері', 'ok'); return; }
   if (typing) { if (e.key === 'Escape') e.target.blur(); return; }
+  if (mod && e.code === 'KeyA') { e.preventDefault(); selectAll(); return; }
   if (mod && e.code === 'KeyD') { e.preventDefault(); duplicateSel(); return; }
   if (mod && e.code === 'KeyC') { e.preventDefault(); copySel(); return; }
   if (mod && e.code === 'KeyX') { e.preventDefault(); copySel(true); return; }
@@ -256,6 +257,9 @@ document.addEventListener('keydown', e => {
     case 'End': e.preventDefault(); seek(duration()); break;
     case 'KeyS': e.preventDefault(); splitAt(); break;
     case 'Delete': case 'Backspace': e.preventDefault(); deleteSel(); break;
+    case 'KeyM': { e.preventDefault(); const near = (S.project.markers || []).find(m => Math.abs(m.t - S.t) < 0.02); if (near) removeMarker(near.id); else { addMarker(S.t); toast('Маркер додано. Подвійний клік по ньому на лінійці — назва, Alt+клік — прибрати', '', 3500); } break; }
+    case 'Comma': e.preventDefault(); jumpMarker(-1); break;
+    case 'Period': e.preventDefault(); jumpMarker(1); break;
     case 'KeyI': mark('in'); break;
     case 'KeyO': mark('out'); break;
     case 'KeyX': cutRange(S.markIn, S.markOut); break;
@@ -339,7 +343,7 @@ function clearEditor() {
   [...media.keys()].forEach(id => removeMedia(id, { forever: true }));
   purgeRemoved();
   S.project = newProject();
-  S.sel = null; S.t = 0; clearMarks();
+  S.sel = null; S.multi = []; S.t = 0; clearMarks();
   resetHistory();
 }
 $('btnNew').addEventListener('click', async () => {
@@ -444,6 +448,13 @@ window.addEventListener('unhandledrejection', e => onErr(e.reason));
 })();
 
 initDock();
+// Ctrl+A: усі елементи на доріжках, що не заблоковані
+function selectAll() {
+  const P = S.project, all = [];
+  const add = (kind, list) => list.forEach(o => { if (!laneLocked(laneOf(kind, o))) all.push({ kind, id: o.id }); });
+  add('clip', P.clips); add('overlay', P.overlays); add('caption', P.captions); add('music', P.music);
+  if (all.length) { selectMany(all); toast(`Виділено елементів: ${all.length}`); }
+}
 initA11y();
 // рядок стану: формат кадру, кількість кліпів, прилипання
 {

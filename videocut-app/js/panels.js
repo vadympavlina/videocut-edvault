@@ -4,6 +4,7 @@ import { MOTIONS, textBoxes, LOOKS, lookFilter, applyLookOverlay, FILTERS_OK, TR
 import { addToTimeline, addOverlay, addLayerAt, TEXT_PRESETS, splitAt, duplicateSel, deleteSel, copySel, moveZ, addCaption, setCaptions, trimMusicToVideo, CARD_STYLES, addTitleCard, normalizeSel, transitionsAll, freezeFrame } from './ops.js';
 import { removeMedia, thumbAt } from './media.js';
 import { seek } from './player.js';
+import { DENOISE_LEVELS } from './denoise.js';
 import { hasKf, keyHere, setKeyHere, removeKeyHere, autoKey, syncBase, localTime, itemLength } from './kf.js';
 import { parseSubtitles } from './srt.js';
 import { renderCapTab, markActiveCaption, capTabClick, capTabInput, capTabChange, capTabToggle, captionInspector, ccAction, speedHtml } from './cc-panel.js';
@@ -403,6 +404,7 @@ function clipPanel(c) {
     sec('Рух кадру', seg('motion', 'Повільний рух', Object.entries(MOTIONS), c.motion || 'none'), 'motion:none');
   const sound = () => sec('Гучність', `${tgl('muted', 'Без звуку', !!c.muted, 'true')}
       ${c.muted ? '' : range('volume', 'Гучність', 0, 2, 0.05, c.volume ?? 1, '%', Math.round((c.volume ?? 1) * 100) + '%', true)}`, 'volume:1,muted:false') +
+    (c.muted || isImg ? '' : sec('Очищення голосу', seg('denoise', 'Шум і гул', DENOISE_LEVELS.map(([v, n]) => [+v, n]), c.denoise || 0, 'Прибирає гул і приглушує фоновий шум у паузах. Слухайте результат: сильне очищення може «ковтати» тихі слова.'), 'denoise:0')) +
     `<div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="norm">${icon('volume')}Вирівняти гучність</button></div>`;
   const time = () => (isImg
     ? sec('Скільки показувати', `<div class="prow stack"><label>Тривалість</label><div class="seg">${[3, 5, 8, 10].map(v => `<button data-a="imgDur" data-v="${v}" class="${near(clipDur(c), v) ? 'on' : ''}">${v} с</button>`).join('')}</div></div>`)

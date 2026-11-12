@@ -1,4 +1,5 @@
 // Мікшування звуку для експорту: блоками, щоб довгі відео не займали всю пам'ять.
+import { denoise } from './denoise.js';
 // Швидкість кліпу змінюється без зміни тону (granular overlap-add).
 import { AudioBufferSink } from '../vendor/mediabunny.min.mjs';
 import { SR, GRAIN, HOP, CHAIN, SEARCH, WIN, alignGrains } from './stretch.js';
@@ -49,7 +50,7 @@ function segments(t0, t1, src = null) {
     if (l.end <= t0 || l.start >= t1) continue;
     const c = l.clip, m = media.get(c.mediaId);
     if (!m || !m.at || !m.canDecodeA || c.muted || !laneAudible('v') || (c.volume ?? 1) <= 0 || !want('main', c.id)) continue;
-    out.push({ m, start: l.start, end: l.end, srcIn: c.in, speed: c.speed || 1, vol: c.volume ?? 1, fin: c.fadeIn || 0, fout: c.fadeOut || 0 });
+    out.push({ m, start: l.start, end: l.end, srcIn: c.in, speed: c.speed || 1, vol: c.volume ?? 1, fin: c.fadeIn || 0, fout: c.fadeOut || 0, dn: c.denoise || 0 });
   }
   for (const mu of S.project.music) {
     if (!want(mu.voice ? 'voice' : 'music', mu.id) || !laneAudible('a')) continue;
@@ -62,7 +63,7 @@ function segments(t0, t1, src = null) {
     if (o.type !== 'video' || o.muted || !laneAudible('v2') || (o.volume ?? 1) <= 0 || !want('layers', o.id)) continue;
     const m = media.get(o.mediaId);
     if (!m || !m.at || !m.canDecodeA || o.start + o.dur <= t0 || o.start >= t1) continue;
-    out.push({ m, start: o.start, end: o.start + Math.min(o.dur, m.duration - (o.in || 0)), srcIn: o.in || 0, speed: 1, vol: o.volume ?? 1, fin: 0, fout: 0 });
+    out.push({ m, start: o.start, end: o.start + Math.min(o.dur, m.duration - (o.in || 0)), srcIn: o.in || 0, speed: 1, vol: o.volume ?? 1, fin: 0, fout: 0, dn: o.denoise || 0 });
   }
   return out;
 }
@@ -98,6 +99,7 @@ export async function renderBlock(t0, t1, { speechOnly = false, sources = null }
     const a = Math.max(t0, s.start), b = Math.min(t1, s.end);
     const o0 = Math.round((a - t0) * SR), o1 = Math.round((b - t0) * SR);
     if (o1 <= o0) continue;
+    const wL = s.dn ? new Float32Array(n) : outL, wR = s.dn ? new Float32Array(n) : outR;
     if (s.duck && !env) env = duckEnvelope(t0, t1);
     // без плавних появ/зникнень у цьому блоці й без приглушення — сталий множник (швидше)
     const fades = (s.fin > 0 && a < s.start + s.fin) || (s.fout > 0 && b > s.end - s.fout);
@@ -105,7 +107,8 @@ export async function renderBlock(t0, t1, { speechOnly = false, sources = null }
     if (Math.abs(s.speed - 1) < 1e-3) {
       const from = s.srcIn + (a - s.start);
       const [L, R] = await readPCM(s.m, from, from + (o1 - o0) / SR + 1 / SR);
-      for (let j = o0, i = 0; j < o1; j++, i++) { const g = gain(j); outL[j] += (L[i] || 0) * g; outR[j] += (R[i] || 0) * g; }
+      for (let j = o0, i = 0; j < o1; j++, i++) { const g = gain(j); wL[j] += (L[i] || 0) * g; wR[j] += (R[i] || 0) * g; }
+      if (s.dn) { denoise(wL, wR, o0, o1, s.dn, SR); for (let j = o0; j < o1; j++) { outL[j] += wL[j]; outR[j] += wR[j]; } }
       continue;
     }
     // зміна швидкості без зміни тону (WSOLA): зерна по 50 мс, крок виходу HOP, початок у джерелі підбирається за формою хвилі
@@ -123,10 +126,11 @@ export async function renderBlock(t0, t1, { speechOnly = false, sources = null }
           if (si < 0 || si >= ch.L.length) continue;
           const j = oStart + i + segStartIdx;
           const g = gain(j) * WIN[i];
-          outL[j] += ch.L[si] * g; outR[j] += ch.R[si] * g;
+          wL[j] += ch.L[si] * g; wR[j] += ch.R[si] * g;
         }
       }
     }
+    if (s.dn) { denoise(wL, wR, o0, o1, s.dn, SR); for (let j = o0; j < o1; j++) { outL[j] += wL[j]; outR[j] += wR[j]; } }
   }
   // м'яке обмеження, щоб суміш не «хрипіла»
   for (let j = 0; j < n; j++) {

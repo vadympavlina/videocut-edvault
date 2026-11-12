@@ -920,6 +920,21 @@ await step('ключові кадри: ставляться з панелі, п�
   await p24.close(); assert.deepEqual(errs, []);
 });
 
+await step('очищення голосу: вмикається в панелі кліпу, звук рендериться без помилок', async () => {
+  const p25 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
+  p25.on('pageerror', e => errs.push(e.message));
+  await p25.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p25.goto(`http://localhost:${port}/index.html`); await p25.waitForFunction(() => window.VideoCut);
+  await p25.setInputFiles('#fileInput', video); await p25.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p25.waitForTimeout(900);
+  await p25.locator('.tl-lanes .clip').first().click();
+  await p25.click('#inspector [data-a="itab"][data-v="sound"]');
+  await p25.click('#inspector [data-set="denoise"][data-v="3"]');
+  assert.equal(await p25.evaluate(() => +window.VideoCut.S.project.clips[0].denoise), 3, 'рівень збережено');
+  const peak = await p25.evaluate(async () => { const { renderBlock } = await import('./videocut-app/js/audio.js'); const b = await renderBlock(0, 2); const d = b.getChannelData(0); let m = 0; for (const x of d) m = Math.max(m, Math.abs(x)); return m; });
+  assert.ok(peak > 0.01, 'звук є: ' + peak);
+  await p25.close(); assert.deepEqual(errs, []);
+});
+
 await step('політика безпеки (CSP) не блокує сторінку: жодних порушень під час запуску й роботи', async () => {
   const pc = await browser.newPage({ viewport: { width: 1300, height: 760 } }); const bad = [];
   pc.on('console', m => { if (/Content Security Policy|Refused to/.test(m.text())) bad.push(m.text()); });

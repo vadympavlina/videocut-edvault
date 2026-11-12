@@ -849,6 +849,26 @@ await step('доріжки: висота (низькі/високі) і клав
   await p21.close(); assert.deepEqual(errs, []);
 });
 
+await step('перегляд: збільшений кадр тягнеться мишею, Alt+колесо змінює масштаб, подвійний клік скидає', async () => {
+  const p22 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  p22.on('pageerror', e => errs.push(e.message));
+  await p22.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p22.goto(`http://localhost:${port}/index.html`); await p22.waitForFunction(() => window.VideoCut);
+  await p22.setInputFiles('#fileInput', video); await p22.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p22.waitForTimeout(900);
+  const c0 = () => p22.evaluate(() => { const c = window.VideoCut.S.project.clips[0]; return { z: c.zoom || 1, x: c.zx ?? 0.5, y: c.zy ?? 0.5 }; });
+  const cv = await p22.locator('#pv').boundingBox();
+  await p22.mouse.move(cv.x + cv.width / 2, cv.y + cv.height / 2);
+  await p22.keyboard.down('Alt'); await p22.mouse.wheel(0, -100); await p22.mouse.wheel(0, -100); await p22.mouse.wheel(0, -100); await p22.keyboard.up('Alt');
+  await p22.waitForTimeout(600);
+  const z1 = await c0(); assert.ok(z1.z > 1.2, 'Alt+колесо наближає: ' + JSON.stringify(z1));
+  await p22.mouse.move(cv.x + cv.width / 2 - 150, cv.y + cv.height / 2 - 60); await p22.mouse.down(); await p22.mouse.move(cv.x + cv.width / 2 - 70, cv.y + cv.height / 2 - 30, { steps: 6 }); await p22.mouse.up();
+  const z2 = await c0(); assert.ok(z2.x < 0.5 && z2.y < 0.5, 'перетягування вправо-вниз зсуває фокус вліво-вгору: ' + JSON.stringify(z2));
+  assert.equal(await p22.evaluate(async () => (await import('./videocut-app/js/state.js')).historyList().items.at(-1).label.length > 0), true);
+  await p22.mouse.dblclick(cv.x + cv.width / 2, cv.y + cv.height / 2);
+  const z3 = await c0(); assert.deepEqual(z3, { z: 1, x: 0.5, y: 0.5 }, 'подвійний клік скидає масштаб');
+  await p22.close(); assert.deepEqual(errs, []);
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

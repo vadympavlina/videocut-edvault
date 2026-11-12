@@ -42,8 +42,25 @@ export function initPreviewLayer() {
     const hit = hitTest(e);
     if (hit && hit.type === 'text') { select('overlay', hit.id); emit('focus-inspector'); return; }
     const cap = capHit(e);
-    if (cap) { select('caption', cap.id); emit('focus-inspector'); }
+    if (cap) { select('caption', cap.id); emit('focus-inspector'); return; }
+    // подвійний клік по збільшеному кадру повертає масштаб 1×
+    const l = clipAt(S.t);
+    if (!hit && l && (l.clip.zoom || 1) > 1.001) {
+      select('clip', l.clip.id); Object.assign(l.clip, { zoom: 1, zx: 0.5, zy: 0.5 });
+      commit('Масштаб кадру'); emit('project', { from: 'insp' }); requestDraw();
+    }
   });
+  // Alt + колесо: наближення кадру основного відео
+  stage.addEventListener('wheel', e => {
+    if (!e.altKey) return;
+    const l = clipAt(S.t); if (!l) return;
+    e.preventDefault();
+    const c = l.clip; select('clip', c.id);
+    c.zoom = clamp(Math.round(((c.zoom || 1) + (e.deltaY < 0 ? 0.1 : -0.1)) * 20) / 20, 1, 4);
+    if (c.zoom <= 1.001) { c.zoom = 1; c.zx = 0.5; c.zy = 0.5; }
+    emit('project', { live: true, from: 'insp' }); requestDraw();
+    clearTimeout(wheelT); wheelT = setTimeout(() => { commit('Масштаб кадру'); emit('project', { from: 'insp' }); }, 350);
+  }, { passive: false });
 }
 
 const visible = o => S.t >= o.start && S.t < o.start + o.dur;
@@ -126,6 +143,7 @@ function renderHandles() {
       if (f) html = `<i class="hd focus" data-h="focus" style="left:${f.x * 100}%;top:${f.y * 100}%" data-tip="Точка наближення"></i>`;
     }
   }
+  { const lc = clipAt(S.t); canvas.classList.toggle('zoomed', !!lc && (lc.clip.zoom || 1) > 1.001); }
   if (html === lastHtml && layer.firstChild && !drag) return; // нічого не змінилося — не чіпаємо DOM
   lastHtml = html;
   layer.innerHTML = html + '<i class="guide gv" hidden></i><i class="guide gh" hidden></i>';
@@ -143,7 +161,7 @@ function focusScreen(c) {
   return { x: (b.W / 2 + ((c.zx ?? 0.5) - 0.5) * b.dw0) / b.W, y: (b.H / 2 + ((c.zy ?? 0.5) - 0.5) * b.dh0) / b.H };
 }
 
-let drag = null;
+let drag = null, wheelT = 0;
 
 // піпетка: колір береться з вихідного кадру накладання під курсором (до ключування)
 function pickKeyAt(e) {
@@ -177,7 +195,11 @@ function onCanvasDown(e) {
     return;
   }
   const l = clipAt(S.t);
-  if (l) select('clip', l.clip.id); else select(null);
+  if (l) {
+    select('clip', l.clip.id);
+    // збільшений кадр можна пересунути прямо на перегляді
+    if ((l.clip.zoom || 1) > 1.001) { startDrag(e, 'pan', l.clip); canvas.classList.add('panning'); }
+  } else select(null);
 }
 function onHandleDown(e) {
   const h = e.target.closest('[data-h]'); if (!h) return;
@@ -194,7 +216,7 @@ function startDrag(e, mode, o) {
   const mv = ev => onMove(ev);
   const up = () => {
     el.removeEventListener('pointermove', mv);
-    const d = drag; drag = null;
+    const d = drag; drag = null; canvas.classList.remove('panning');
     layer.querySelectorAll('.guide').forEach(g => { g.hidden = true; });
     if (d && d.moved) commit();
   };
@@ -220,6 +242,12 @@ function onMove(e) {
     if (snap) y = 0.5;
     st.y = y;
     gh.hidden = !snap;
+  } else if (drag.mode === 'pan') {
+    // кадр рухається за мишею: точка фокусу зміщується у протилежний бік
+    const b = frameBase(o); if (!b) return;
+    const k = Math.max(0.05, (o.zoom || 1) - 1);
+    o.zx = clamp((a.zx ?? 0.5) - dx * b.W / (b.dw0 * k), 0, 1);
+    o.zy = clamp((a.zy ?? 0.5) - dy * b.H / (b.dh0 * k), 0, 1);
   } else if (drag.mode === 'focus') {
     const b = frameBase(o); if (!b) return;
     o.zx = clamp(0.5 + (p.x * b.W - b.W / 2) / b.dw0, 0, 1);

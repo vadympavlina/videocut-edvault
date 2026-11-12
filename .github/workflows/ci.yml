@@ -22,5 +22,5 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           npm run test:e2e
-      - name: Аудити (доступність, швидкість)
-        run: npm run audit:a11y && npm run audit:perf
+      - name: Аудити (доступність, швидкість, стрес)
+        run: npm run audit:a11y && npm run audit:keyboard && npm run audit:perf && npm run audit:stress

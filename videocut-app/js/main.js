@@ -1,5 +1,5 @@
 // Точка входу відеоредактора Edvault.
-import { S, outputSize, media, on, emit, commit, undo, redo, canUndo, canRedo, select, duration, layout, newProject, resetHistory, editPoints } from './state.js';
+import { S, repairProject, outputSize, media, on, emit, commit, undo, redo, canUndo, canRedo, select, duration, layout, newProject, resetHistory, editPoints } from './state.js';
 import { addMedia, removeMedia, reviveMedia, removedMedia, purgeRemoved } from './media.js';
 import { initPlayer, resizeCanvas, seek, toggle, pause, play, snapshot, requestDraw } from './player.js';
 import { initTimeline, render as renderTimeline, zoomBy, zoomFit, setZoom } from './timeline.js';
@@ -310,7 +310,7 @@ async function restore() {
     if (!blobs[i]) { missing.push(name); continue; }
     try { await addMedia(blobs[i], name, { id, persist: false }); } catch (e) { missing.push(name); }
   }
-  S.project = { ...newProject(), ...p };
+  S.project = repairProject(p);
   // файли, яких немає у списку проєкту (залишки після збоїв чи видалених), більше не потрібні
   DB.blobKeys().then(keys => keys.filter(k => !list.some(x => x.id === k || 'p_' + x.id === k)).forEach(k => DB.delBlob(k).catch(() => {}))).catch(() => {});
   resetHistory();
@@ -368,7 +368,7 @@ async function openProjectFile(file) {
   for (const it of data.items) {
     try { await addMedia(it.blob, it.name, { id: it.id }); } catch (e) { console.warn(e); missing.push(it.name); }
   }
-  S.project = { ...newProject(), ...data.project };
+  S.project = repairProject(data.project);
   resetHistory();
   emit('project', { committed: true, restored: true });
   emit('select');
@@ -423,8 +423,20 @@ document.addEventListener('pointerdown', e => {
 });
 if (window.matchMedia('(max-width: 980px)').matches) toast('Редактор найзручніший на комп’ютері з великим екраном', '', 4000);
 
+// помилки, яких не передбачено: редактор лишається працювати, користувач бачить повідомлення (не частіше, ніж раз на 4 с)
+let lastErr = 0;
+const onErr = e => { console.error(e); if (Date.now() - lastErr < 4000) return; lastErr = Date.now(); toast('Щось пішло не так. Проєкт збережено, можна продовжувати. Якщо повторюється, перезавантажте сторінку.', 'err', 5000); };
+window.addEventListener('error', e => onErr(e.error || e.message));
+window.addEventListener('unhandledrejection', e => onErr(e.reason));
+
 (async () => {
-  await restore();
+  // пошкоджений проєкт з минулого разу не повинен ламати запуск: копію лишаємо, редактор стартує з порожнього
+  try { await restore(); } catch (e) {
+    console.error(e);
+    try { const bad = await DB.get('project'); if (bad) await DB.set('project_broken', bad); await DB.set('project', null); } catch { /* немає доступу до бази */ }
+    S.project = newProject(); resetHistory();
+    toast('Збережений проєкт не вдалося відкрити, його копію збережено. Починаємо з порожнього.', 'err', 6000);
+  }
   await takeHandoffIfAny();
   syncTitle(); syncEmpty(); syncTransport(); syncHistory(); fitStage();
   if (duration() > 0) zoomFit(); else setZoom(60, 0);

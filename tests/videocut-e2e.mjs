@@ -508,6 +508,25 @@ await step('макет: панелі впритул без проміжків, �
   await p7.close();
 });
 
+await step('пошкоджений проєкт у базі не ламає запуск: редактор відкривається, значення виправляються', async () => {
+  const p8 = await browser.newPage({ viewport: { width: 1300, height: 760 } }); const errs8 = [];
+  p8.on('pageerror', e => errs8.push(e.message));
+  await p8.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p8.goto(`http://localhost:${port}/index.html`); await p8.waitForFunction(() => window.VideoCut);
+  const put = v => p8.evaluate(v => new Promise((res, rej) => { const r = indexedDB.open('edvault-videocut'); r.onsuccess = () => { const tx = r.result.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, 'project'); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }; r.onerror = () => rej(r.error); }), v);
+  // 1) поля не того типу: clips не масив, швидкість NaN, формат невідомий
+  await put({ v: 1, name: 5, aspect: '7:3', fps: 99, clips: 'ой', overlays: [null, { id: 'o1', start: 'x', dur: -4 }], captions: {}, music: [{ id: 'm1', start: 0, in: 'a', out: null }] });
+  await p8.reload(); await p8.waitForFunction(() => window.VideoCut); await p8.waitForTimeout(800);
+  const r = await p8.evaluate(() => { const P = window.VideoCut.S.project; return { clips: Array.isArray(P.clips), aspect: P.aspect, fps: P.fps, ov: P.overlays.length, dur: P.overlays[0]?.dur, music: P.music[0] && [P.music[0].in, P.music[0].out] }; });
+  assert.deepEqual([r.clips, r.aspect, r.fps, r.ov], [true, '16:9', 30, 1], JSON.stringify(r)); assert.ok(r.dur >= 0.05); assert.deepEqual(r.music, [0, 1]);
+  assert.ok(await p8.locator('#stageEmpty, #pv').count() > 0);
+  // 2) нечитабельне значення: редактор стартує порожнім
+  await put('не проєкт');
+  await p8.reload(); await p8.waitForFunction(() => window.VideoCut); await p8.waitForTimeout(500);
+  assert.equal(await p8.evaluate(() => window.VideoCut.S.project.clips.length), 0);
+  await p8.close(); assert.deepEqual(errs8, [], 'без винятків');
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

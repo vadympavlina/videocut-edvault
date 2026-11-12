@@ -21,6 +21,26 @@ export function newProject() {
   };
 }
 
+// Проєкт з диска чи бази може бути пошкоджений або старий: приводимо до очікуваної форми, щоб редактор не падав на запуску
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const num = (v, d) => (Number.isFinite(v) ? v : d);
+export function repairProject(p) {
+  const base = newProject();
+  if (!isObj(p)) return base;
+  const out = { ...base, ...p };
+  for (const k of ['clips', 'overlays', 'captions', 'music']) out[k] = Array.isArray(p[k]) ? p[k].filter(x => isObj(x) && x.id) : [];
+  out.name = typeof out.name === 'string' ? out.name.slice(0, 200) : base.name;
+  if (!ASPECTS[out.aspect]) out.aspect = base.aspect;
+  out.fps = [24, 25, 30, 60].includes(out.fps) ? out.fps : base.fps;
+  if (!/^#[0-9a-f]{6}$/i.test(out.bg || '')) out.bg = base.bg;
+  out.captionStyle = isObj(p.captionStyle) ? { ...CC_DEFAULT, ...p.captionStyle } : { ...CC_DEFAULT };
+  const time = (o, k, d) => { o[k] = Math.max(0, num(o[k], d)); };
+  for (const c of out.clips) { time(c, 'in', 0); c.out = num(c.out, c.in + 1); if (c.out <= c.in) c.out = c.in + 0.1; c.speed = Math.min(8, Math.max(0.1, num(c.speed, 1))); }
+  for (const m of out.music) { time(m, 'in', 0); m.out = num(m.out, m.in + 1); if (m.out <= m.in) m.out = m.in + 0.1; }
+  for (const o of [...out.overlays, ...out.captions, ...out.music]) { time(o, 'start', 0); if ('dur' in o) o.dur = Math.max(0.05, num(o.dur, 1)); }
+  return out;
+}
+
 export const S = {
   project: newProject(),
   sel: null,        // {kind: 'clip'|'overlay'|'caption'|'music', id}

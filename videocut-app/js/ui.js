@@ -239,8 +239,10 @@ export function toast(msg, kind, ms) {
 }
 
 // ── модалки ──
+const modalOpener = new Map();
 export function openModal(id) {
   const o = $(id);
+  if (!o.classList.contains('open')) modalOpener.set(id, document.activeElement);
   o.classList.add('open');
   const m = o.querySelector('.modal');
   if (m) m.scrollTop = 0;
@@ -248,7 +250,23 @@ export function openModal(id) {
   // preventScroll: інакше довге вікно прокручується до кнопки внизу і верх «зникає»
   if (f) setTimeout(() => f.focus({ preventScroll: true }), 20);
 }
-export function closeModal(id) { $(id).classList.remove('open'); }
+export function closeModal(id) {
+  const o = $(id), was = o.classList.contains('open'); o.classList.remove('open');
+  const back = modalOpener.get(id); modalOpener.delete(id);
+  // фокус повертається туди, звідки відкрили вікно, якщо цей елемент ще існує й видимий
+  if (was && back && back.isConnected && back.offsetParent !== null && !document.querySelector('.overlay.open')) setTimeout(() => back.focus({ preventScroll: true }), 0);
+}
+// Tab у відкритому вікні ходить по колу всередині нього
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const m = [...document.querySelectorAll('.overlay.open .modal')].pop(); if (!m) return;
+  const f = [...m.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')].filter(x => !x.disabled && x.offsetParent !== null);
+  if (!f.length) { e.preventDefault(); return; }
+  const i = f.indexOf(document.activeElement);
+  if (i < 0) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+  else if (e.shiftKey && i === 0) { e.preventDefault(); f.at(-1).focus(); }
+  else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+});
 export const anyModalOpen = () => !!document.querySelector('.overlay.open');
 
 export function confirmDialog(title, msg, yes = 'Так', danger = true) {

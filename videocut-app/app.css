@@ -1171,3 +1171,4 @@ details.lfold[open]>summary::after{transform:rotate(45deg)}
 .mrow .mquick{justify-self:end}
 .mrow .mact{position:absolute;right:40px;top:50%;transform:translateY(-50%);margin:0;grid-column:auto}
 .mrow:hover .minfo,.mrow:focus-within .minfo{padding-right:60px}
+.mrow .mact .btn:focus-visible,.mrow .mquick:focus-visible{outline:2px solid var(--accent);outline-offset:1px}

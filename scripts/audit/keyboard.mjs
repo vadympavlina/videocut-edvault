@@ -12,7 +12,7 @@ await p.goto(server.url + '/index.html'); await p.waitForFunction(() => window.V
 let bad = 0;
 const ring = () => p.evaluate(() => { const e = document.activeElement; if (!e || e === document.body) return null; const s = getComputedStyle(e); const vis = (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || (s.boxShadow && s.boxShadow !== 'none'); return { vis, tag: e.tagName + (e.id ? '#' + e.id : e.className ? '.' + String(e.className).split(' ')[0] : '') }; });
 let seen = 0, vis = 0; const miss = [];
-for (let i = 0; i < 40; i++) { await p.keyboard.press('Tab'); const r = await ring(); if (!r) continue; seen++; if (r.vis || /^(INPUT|TEXTAREA)/.test(r.tag)) vis++; else miss.push(r.tag); }
+for (let i = 0; i < 40; i++) { await p.keyboard.press('Tab'); const r = await ring(); if (!r) continue; seen++; if (r.vis || /^(INPUT|TEXTAREA)/.test(r.tag)) vis++; else miss.push(r.tag + ' ' + (r.id || '')); }
 console.log(`Tab по головному екрану: фокус видно у ${vis} з ${seen}${miss.length ? '; без кільця: ' + [...new Set(miss)].slice(0, 8).join(', ') : ''}`); bad += seen - vis;
 // гарячі клавіші
 await p.evaluate(() => { document.activeElement?.blur(); window.VideoCut.seek(2); });

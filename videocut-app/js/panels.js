@@ -1,9 +1,10 @@
 // Ліва панель (медіа, текст, елементи, субтитри) і права панель властивостей.
-import { S, media, on, emit, commit, select, findSel, layout, clipDur, musicDur, mainEnd, duration, rippleShift, outputSize } from './state.js';
+import { S, uid, media, on, emit, commit, select, findSel, layout, clipDur, musicDur, mainEnd, duration, rippleShift, outputSize } from './state.js';
 import { MOTIONS, textBoxes, LOOKS, lookFilter, applyLookOverlay, FILTERS_OK, TRANSITIONS, ANIMS, animOf } from './render.js';
 import { addToTimeline, addOverlay, addLayerAt, TEXT_PRESETS, splitAt, duplicateSel, deleteSel, copySel, moveZ, addCaption, setCaptions, trimMusicToVideo, CARD_STYLES, addTitleCard, normalizeSel, transitionsAll, freezeFrame } from './ops.js';
 import { removeMedia, thumbAt } from './media.js';
 import { seek } from './player.js';
+import { parseCube } from './lut.js';
 import { DENOISE_LEVELS } from './denoise.js';
 import { hasKf, keyHere, setKeyHere, removeKeyHere, autoKey, syncBase, localTime, itemLength } from './kf.js';
 import { parseSubtitles } from './srt.js';
@@ -240,6 +241,17 @@ export function initInspector() {
     if (f) { f.focus(); f.select?.(); }
   });
   box().addEventListener('input', onInput);
+  $('lutInput').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    const o = findSel(); if (!f || !o || !S.sel || S.sel.kind !== 'clip') return;
+    try {
+      if (f.size > 8e6) throw new Error('Файл завеликий для LUT');
+      const l = parseCube(await f.text());
+      const lut = { id: uid('l'), name: (l.name || f.name.replace(/\.cube$/i, '')).slice(0, 40), size: l.size, b64: l.b64 };
+      S.project.luts = [...(S.project.luts || []), lut].slice(-24);
+      o.lut = { id: lut.id, mix: 1 }; commit('Кольорова схема'); renderInspector(); toast('Кольорову схему додано', 'ok');
+    } catch (er) { toast(er.message || 'Не вдалося прочитати файл LUT', 'err'); }
+  });
   box().addEventListener('change', onChange);
   box().addEventListener('click', onClick);
   // клік по значенню біля повзунка: ввести точне число з клавіатури
@@ -414,7 +426,12 @@ function clipPanel(c) {
         ${c.tr ? range('tr.d', 'Тривалість', 0.2, 2, 0.1, c.tr.d || 0.6, ' с') : ''}
         <button class="btn btn-sm btn-block btn-ghost-sm" data-a="trAll">${icon('sparkle')}${S.project.clips.slice(1).every(x => x.tr) ? 'Прибрати переходи всюди' : 'Переходи між усіма кліпами'}</button>`, 'tr:del') : '') +
     (isImg ? '' : `<div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="freeze">${icon('camera')}Стоп-кадр (3 с)</button></div><p class="hint">Фрагмент ${fmt(c.in)}–${fmt(c.out)} з файлу тривалістю ${fmt(m ? m.duration : 0)}.</p>`);
-  const look = () => sec('Фільтр', m ? lookCards(c, m) : '<p class="hint">Файл недоступний.</p>', 'look:none') +
+  const luts = S.project.luts || [];
+  const lutSec = () => sec('Кольорова схема (LUT)', `<div class="kflist"><button type="button" class="kf-chip${c.lut ? '' : ' on'}" data-a="lutPick" data-v="">Без схеми</button>${luts.map(l => `<button type="button" class="kf-chip${c.lut && c.lut.id === l.id ? ' on' : ''}" data-a="lutPick" data-v="${l.id}">${esc(l.name)}</button>`).join('')}</div>
+      ${c.lut ? range('lut.mix', 'Сила', 0, 1, 0.05, c.lut.mix ?? 1, '%', Math.round((c.lut.mix ?? 1) * 100) + '%') : ''}
+      <div class="iaction"><button type="button" class="btn btn-outline btn-sm btn-block" data-a="lutAdd">${icon('upload')}Додати файл .cube</button></div>
+      <p class="hint">Готові схеми кольору з програм кольорокорекції. Файл зберігається в проєкті.</p>`, c.lut ? 'lut:del' : '');
+  const look = () => sec('Фільтр', m ? lookCards(c, m) : '<p class="hint">Файл недоступний.</p>', 'look:none') + lutSec() +
     (FILTERS_OK ? sec('Колір', `${range('bri', 'Яскравість', 0.5, 1.6, 0.02, c.bri ?? 1, '%', Math.round((c.bri ?? 1) * 100) + '%')}${range('con', 'Контраст', 0.5, 1.8, 0.02, c.con ?? 1, '%', Math.round((c.con ?? 1) * 100) + '%')}${range('sat', 'Насиченість', 0, 2, 0.02, c.sat ?? 1, '%', Math.round((c.sat ?? 1) * 100) + '%')}`, 'bri:1,con:1,sat:1') : '');
   const tabs = [['frame', 'Кадр', frame]];
   if (!isImg) tabs.push(['sound', 'Звук', sound]);
@@ -730,6 +747,8 @@ function onClick(e) {
       }
       commit(); if (aspect) emit('aspect'); renderInspector();
     } break;
+    case 'lutAdd': $('lutInput').click(); break;
+    case 'lutPick': if (o) { const id = b.dataset.v; if (id) o.lut = { id, mix: o.lut ? o.lut.mix ?? 1 : 1 }; else delete o.lut; commit('Кольорова схема'); renderInspector(); } break;
     case 'kfAdd': if (o) {
       const kind = kindOfSel();
       if (keyHere(kind, o)) { removeKeyHere(kind, o); commit('Прибрано ключовий кадр'); } else { setKeyHere(kind, o); commit('Ключовий кадр'); }

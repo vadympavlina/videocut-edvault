@@ -20,6 +20,7 @@ jobs:
         run: npm test
       - name: Браузерні тести
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           npx playwright install --with-deps chromium
           npm run test:e2e
       - name: Аудити (доступність, швидкість, стрес)

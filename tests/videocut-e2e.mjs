@@ -636,6 +636,28 @@ await step('обрізка «стик» (Shift): межа двох кліпів 
   await p13.close(); assert.deepEqual(errs, []);
 });
 
+await step('перегляд: масштаб (Підігнати, 100 %), прокрутка збільшеного кадру, сітка й безпечні поля, налаштування зберігаються', async () => {
+  const p14 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  p14.on('pageerror', e => errs.push(e.message));
+  await p14.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p14.goto(`http://localhost:${port}/index.html`); await p14.waitForFunction(() => window.VideoCut);
+  await p14.evaluate(() => localStorage.removeItem('vc_view')); await p14.reload(); await p14.waitForFunction(() => window.VideoCut);
+  await p14.setInputFiles('#fileInput', video); await p14.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p14.waitForTimeout(800);
+  const sz = () => p14.evaluate(() => { const c = document.getElementById('pv').getBoundingClientRect(), s = document.getElementById('stageScroll'); return { w: Math.round(c.width), scroll: s.scrollWidth > s.clientWidth }; });
+  const fit = await sz(); assert.ok(fit.w < 1000 && !fit.scroll, 'підігнаний кадр вміщується: ' + JSON.stringify(fit));
+  await p14.selectOption('#pvZoom', '100'); await p14.waitForTimeout(300);
+  const z100 = await sz(); assert.equal(z100.w, 1920, '100 % — один піксель кадру на піксель екрана'); assert.ok(z100.scroll, 'збільшений кадр прокручується');
+  await p14.selectOption('#pvZoom', '50'); await p14.waitForTimeout(300); assert.equal((await sz()).w, 960);
+  await p14.selectOption('#pvZoom', 'fit'); await p14.waitForTimeout(300);
+  assert.ok(await p14.locator('#pvGuides[hidden]').count(), 'напрямні сховані за замовчуванням');
+  await p14.click('#btnGrid'); await p14.click('#btnSafe');
+  const g = await p14.evaluate(() => { const gd = document.getElementById('pvGuides'); return { hidden: gd.hidden, grid: getComputedStyle(gd.querySelector('.g-third')).display, safe: getComputedStyle(gd.querySelector('.g-title')).display, w: Math.round(gd.getBoundingClientRect().width), cw: Math.round(document.getElementById('pv').getBoundingClientRect().width) }; });
+  assert.deepEqual([g.hidden, g.grid, g.safe], [false, 'block', 'block']); assert.equal(g.w, g.cw, 'напрямні рівно по кадру');
+  await p14.reload(); await p14.waitForFunction(() => window.VideoCut);
+  assert.equal(await p14.evaluate(() => window.VideoCut.S.view.grid), true, 'сітка запам\u2019ятовується');
+  await p14.close(); assert.deepEqual(errs, []);
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

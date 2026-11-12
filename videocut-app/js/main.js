@@ -17,6 +17,7 @@ import { DB, takeHandoff } from './db.js';
 import { packProject, unpackProject, PROJ_EXT } from './projfile.js';
 import { initDock } from './dock.js';
 import { initA11y } from './a11y.js';
+import { initView } from './viewctl.js';
 import { initAsr, openAsr, asrBusy } from './asr.js';
 import { initConvert, needsConvert, convertWithDialog, converting } from './convert.js';
 import { $, icon, hydrateIcons, paintRanges, initTips, initTheme, toast, fmt, openModal, closeModal, anyModalOpen, confirmDialog, downloadBlob, safeName, fmtBytes } from './ui.js';
@@ -39,7 +40,7 @@ on('proxy-start', m => toast(`«${m.name}» дуже велике (${m.width}×$
 // ── розмір перегляду ──
 const stage = $('stage');
 function fitStage() {
-  const r = stage.getBoundingClientRect();
+  const r = ($('stageScroll') || stage).getBoundingClientRect();
   resizeCanvas(Math.max(40, r.width - 32), Math.max(40, r.height - 32));
   renderHandles();
 }
@@ -456,6 +457,7 @@ function selectAll() {
   if (all.length) { selectMany(all); toast(`Виділено елементів: ${all.length}`); }
 }
 initA11y();
+initView(fitStage);
 // рядок стану: формат кадру, кількість кліпів, прилипання
 {
   const sb = { fmt: $('sbFmt'), clips: $('sbClips'), snap: $('sbSnap') };

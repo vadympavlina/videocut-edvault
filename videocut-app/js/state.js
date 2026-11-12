@@ -52,6 +52,7 @@ export const S = {
   multi: [],        // усі виділені елементи (разом із головним)
   t: 0,             // позиція курсора на таймлайні, с
   playing: false,
+  view: { zoom: 'fit', grid: false, safe: false }, // перегляд: масштаб, сітка, безпечні поля
   pps: 60,          // пікселів на секунду на таймлайні
   snap: true,
   markIn: null, markOut: null,

@@ -101,6 +101,8 @@ function renderHandles() {
     lastBox = box;
     layer.style.left = canvas.offsetLeft + 'px'; layer.style.top = canvas.offsetTop + 'px';
     layer.style.width = canvas.offsetWidth + 'px'; layer.style.height = canvas.offsetHeight + 'px';
+    const gd = document.getElementById('pvGuides');
+    if (gd) Object.assign(gd.style, { left: canvas.offsetLeft + 'px', top: canvas.offsetTop + 'px', width: canvas.offsetWidth + 'px', height: canvas.offsetHeight + 'px' });
   }
   const o = findSel();
   let html = '';

@@ -45,6 +45,7 @@
 <link rel="modulepreload" href="videocut-app/js/stretch.js">
 <link rel="modulepreload" href="videocut-app/js/timeline.js">
 <link rel="modulepreload" href="videocut-app/js/ui.js">
+<link rel="modulepreload" href="videocut-app/js/viewctl.js">
 <link rel="modulepreload" href="videocut-app/js/voice.js">
 <link rel="modulepreload" href="videocut-app/vendor/mediabunny.min.mjs">
 <!-- /preload -->
@@ -93,10 +94,10 @@
 
   <main class="center">
     <div class="stage" id="stage">
-      <canvas id="pv"></canvas>
+      <div class="stage-scroll" id="stageScroll"><div class="pv-wrap" id="pvWrap"><canvas id="pv"></canvas>
+      <div class="pv-guides" id="pvGuides" hidden><i class="g-third"></i><i class="g-act"></i><i class="g-title"></i></div><div class="pv-layer" id="pvLayer"></div></div></div>
       <div class="rec-count" id="recCount" hidden></div>
       <div class="rec-badge" id="recBadge" hidden><i></i><b id="recTime">00:00</b><span>Іде запис</span><button class="btn btn-sm" id="btnRecStop"><span data-icon="stop"></span>Стоп</button></div>
-      <div class="pv-layer" id="pvLayer"></div>
       <button class="btn btn-icon btn-sm stage-full" id="btnFull" data-tip="На весь екран" data-key="F"><span data-icon="full"></span></button>
       <div class="stage-empty" id="stageEmpty">
         <div class="se-ico"><span data-icon="film"></span></div>
@@ -111,6 +112,11 @@
       </div>
     </div>
   <div class="pv-bar">
+    <div class="pv-tools" role="group" aria-label="Перегляд">
+      <label class="pv-zoom"><span class="sr-only">Масштаб перегляду</span><select id="pvZoom" class="input"><option value="fit">Підігнати</option><option value="25">25 %</option><option value="50">50 %</option><option value="100">100 %</option><option value="200">200 %</option><option value="400">400 %</option></select></label>
+      <button type="button" class="btn btn-icon btn-sm" id="btnGrid" data-tip="Сітка третин" aria-pressed="false"><span data-icon="grid"></span></button>
+      <button type="button" class="btn btn-icon btn-sm" id="btnSafe" data-tip="Безпечні поля (текст і дії)" aria-pressed="false"><span data-icon="safe"></span></button>
+    </div>
     <div class="tb-c">
       <button class="btn btn-icon btn-sm hide-sm" id="btnStart" data-tip="На початок" data-key="Home"><span data-icon="prev"></span></button>
       <button class="btn btn-icon btn-sm" id="btnFrameBack" data-tip="Кадр назад" data-key="←"><span data-icon="stepBack"></span></button>

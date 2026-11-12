@@ -25,10 +25,12 @@ export function initPlayer(cv) {
 export function resizeCanvas(maxW, maxH) {
   const { W, H } = outputSize();
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const r = Math.min(maxW / W, maxH / H);
+  const z = S.view.zoom === 'fit' ? null : +S.view.zoom / 100;
+  const r = z == null ? Math.min(maxW / W, maxH / H) : z;
   const cssW = Math.max(40, Math.floor(W * r)), cssH = Math.max(40, Math.floor(H * r));
   canvas.style.width = cssW + 'px';
   canvas.style.height = cssH + 'px';
+  S.view.fitted = z == null;
   const scale = Math.min(1, (cssW * dpr) / W);
   const pw = Math.round(W * scale), ph = Math.round(H * scale);
   if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }

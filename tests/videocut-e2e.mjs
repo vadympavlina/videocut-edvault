@@ -1038,6 +1038,32 @@ await step('запис екрана: меню «Додати», індикато
   await p30.close(); assert.deepEqual(errs, []);
 });
 
+await step('реверс: створюється нова копія з кадрами й звуком задом наперед, кліп переходить на неї, скасування повертає початковий файл', async () => {
+  const p31 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
+  p31.on('pageerror', e => errs.push(e.message));
+  await p31.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p31.goto(`http://localhost:${port}/index.html`); await p31.waitForFunction(() => window.VideoCut);
+  await p31.setInputFiles('#fileInput', video); await p31.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p31.waitForTimeout(900);
+  // залишаємо 3 секунди: розріз на 3 і видалення решти
+  await p31.evaluate(() => { const c = window.VideoCut.S.project.clips[0]; c.out = c.in + 3; window.VideoCut.commit(); });
+  await p31.waitForTimeout(300);
+  const sig = t => p31.evaluate(async t => { const V = window.VideoCut; V.seek(t); await new Promise(r => setTimeout(r, 600)); const c = document.getElementById('pv'), x = document.createElement('canvas'); x.width = 48; x.height = 27; const cx = x.getContext('2d'); cx.drawImage(c, 0, 0, 48, 27); return [...cx.getImageData(0, 0, 48, 27).data]; }, t);
+  const diff = (a, b) => a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length;
+  const o0 = await sig(0.2), o2 = await sig(2.8);
+  await p31.locator('.tl-lanes .clip').first().click();
+  await p31.click('#inspector [data-a="itab"][data-v="time"]');
+  const orig = await p31.evaluate(() => window.VideoCut.S.project.clips[0].mediaId);
+  await p31.click('[data-a="reverse"]');
+  await p31.waitForFunction(id => window.VideoCut.S.project.clips[0].mediaId !== id, orig, { timeout: 90000 }); await p31.waitForTimeout(800);
+  const r = await p31.evaluate(() => { const V = window.VideoCut, c = V.S.project.clips[0], m = V.media.get(c.mediaId); return { name: m.name, d: m.duration, hasAudio: m.hasAudio, v: m.hasVideo }; });
+  assert.match(r.name, /\(реверс\)/); assert.ok(Math.abs(r.d - 3) < 0.4, 'тривалість ~3 с: ' + r.d); assert.ok(r.hasAudio && r.v);
+  const r0 = await sig(0.2), r2 = await sig(2.8);
+  assert.ok(diff(r0, o2) < diff(r0, o0) / 3 && diff(r2, o0) < diff(r2, o2) / 3, `порядок кадрів змінено: ${diff(r0, o2).toFixed(1)} / ${diff(r0, o0).toFixed(1)}`);
+  await p31.keyboard.press('Control+z'); await p31.waitForTimeout(300);
+  assert.equal(await p31.evaluate(() => window.VideoCut.S.project.clips[0].mediaId), orig, 'скасування повертає початковий файл');
+  await p31.close(); assert.deepEqual(errs, []);
+});
+
 await step('політика безпеки (CSP) не блокує сторінку: жодних порушень під час запуску й роботи', async () => {
   const pc = await browser.newPage({ viewport: { width: 1300, height: 760 } }); const bad = [];
   pc.on('console', m => { if (/Content Security Policy|Refused to/.test(m.text())) bad.push(m.text()); });

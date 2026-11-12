@@ -6,6 +6,8 @@ import { removeMedia, thumbAt } from './media.js';
 import { seek } from './player.js';
 import { parseCube } from './lut.js';
 import { analyze as analyzeStab } from './stab.js';
+import { reverseRange, REVERSE_MAX } from './reverse.js';
+import { addMedia } from './media.js';
 import { DENOISE_LEVELS } from './denoise.js';
 import { hasKf, keyHere, setKeyHere, removeKeyHere, autoKey, syncBase, localTime, itemLength } from './kf.js';
 import { parseSubtitles } from './srt.js';
@@ -323,6 +325,29 @@ function motionSec(kind, o) {
     ${has ? `<button type="button" class="btn btn-sm btn-icon" data-a="kfStep" data-v="-1" data-tip="Попередній ключовий кадр" aria-label="Попередній ключовий кадр">${icon('chevL')}</button><button type="button" class="btn btn-sm btn-icon" data-a="kfStep" data-v="1" data-tip="Наступний ключовий кадр" aria-label="Наступний ключовий кадр">${icon('chevR')}</button>` : ''}</div>
     ${has ? `<div class="kflist">${list}</div><div class="iaction"><button type="button" class="btn btn-outline btn-sm btn-block" data-a="kfClear">Прибрати весь рух</button></div>` : ''}`);
 }
+// Реверс: кліп грає задом наперед (створюється нова копія файлу)
+const revBusy = new Map();
+function reverseSec(c, m) {
+  if (!m || m.kind !== 'video') return '';
+  const len = (c.out || 0) - (c.in || 0), busy = revBusy.get(c.id);
+  if (busy != null) return sec('Реверс', `<div class="prow stack"><label>Створюю реверс</label><div class="stab-bar"><i style="width:${Math.round(busy * 100)}%"></i></div></div>`);
+  if (len > REVERSE_MAX) return sec('Реверс', `<p class="hint">Реверс доступний для кліпів до ${REVERSE_MAX} с. Розріжте кліп і зробіть реверс потрібної частини.</p>`);
+  return sec('Реверс', `<p class="hint">Відео й звук підуть задом наперед. Створюється нова копія фрагмента, початковий файл не змінюється.</p><div class="iaction"><button type="button" class="btn btn-outline btn-sm btn-block" data-a="reverse">${icon('undo')}Створити реверс</button></div>`);
+}
+async function runReverse(c) {
+  const m = media.get(c.mediaId); if (!m || revBusy.has(c.id)) return;
+  revBusy.set(c.id, 0); renderInspector();
+  try {
+    const from = c.in || 0, to = c.out || m.duration;
+    const blob = await reverseRange(m, from, to, { onProgress: p => { revBusy.set(c.id, p); if (S.sel && S.sel.id === c.id) renderInspector(); }, isAlive: () => S.project.clips.includes(c) });
+    const nm = await addMedia(blob, `${m.name.replace(/\.[^.]+$/, '')} (реверс).webm`);
+    Object.assign(c, { mediaId: nm.id, in: 0, out: nm.duration });
+    delete c.stab; delete c.stabOn;
+    commit('Реверс'); toast('Реверс готовий', 'ok');
+  } catch (e) { console.warn(e); if (e.message !== 'Скасовано') toast('Не вдалося створити реверс: ' + (e.message || e), 'err', 6000); }
+  revBusy.delete(c.id); emit('project', { from: 'insp' }); renderInspector();
+}
+
 // Стабілізація кадру
 const stabBusy = new Map(); // id кліпа -> частка виконаного
 function stabSec(c, m) {
@@ -444,7 +469,7 @@ function clipPanel(c) {
     `<div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="norm">${icon('volume')}Вирівняти гучність</button></div>`;
   const time = () => (isImg
     ? sec('Скільки показувати', `<div class="prow stack"><label>Тривалість</label><div class="seg">${[3, 5, 8, 10].map(v => `<button data-a="imgDur" data-v="${v}" class="${near(clipDur(c), v) ? 'on' : ''}">${v} с</button>`).join('')}</div></div>`)
-    : sec('Швидкість', seg('speed', 'Темп', [[0.5, '0,5×'], [1, '1×'], [1.25, '1,25×'], [1.5, '1,5×'], [2, '2×']], sp, speedHint))) +
+    : sec('Швидкість', seg('speed', 'Темп', [[0.5, '0,5×'], [1, '1×'], [1.25, '1,25×'], [1.5, '1,5×'], [2, '2×']], sp, speedHint))) + (isImg ? '' : reverseSec(c, m)) +
     sec('Поява й зникнення', `${range('fadeIn', 'Поява', 0, 3, 0.1, c.fadeIn || 0, ' с')}${range('fadeOut', 'Зникнення', 0, 3, 0.1, c.fadeOut || 0, ' с')}`, 'fadeIn:0,fadeOut:0') +
     (idx > 0 ? sec('Перехід до цього кліпу', `<div class="tr-grid">${[['', 'Немає']].concat(Object.entries(TRANSITIONS)).map(([k, n]) => `<button data-a="tr" data-v="${k}" class="tr-card tr-${k || 'none'}${(c.tr ? c.tr.type : '') === k ? ' on' : ''}"><i></i><small>${n}</small></button>`).join('')}</div>
         ${c.tr ? range('tr.d', 'Тривалість', 0.2, 2, 0.1, c.tr.d || 0.6, ' с') : ''}
@@ -771,6 +796,7 @@ function onClick(e) {
       }
       commit(); if (aspect) emit('aspect'); renderInspector();
     } break;
+    case 'reverse': if (o && S.sel.kind === 'clip') runReverse(o); break;
     case 'stabRun': if (o && S.sel.kind === 'clip') runStab(o); break;
     case 'lutAdd': $('lutInput').click(); break;
     case 'lutPick': if (o) { const id = b.dataset.v; if (id) o.lut = { id, mix: o.lut ? o.lut.mix ?? 1 : 1 }; else delete o.lut; commit('Кольорова схема'); renderInspector(); } break;

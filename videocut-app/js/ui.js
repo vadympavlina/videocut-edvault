@@ -137,7 +137,9 @@ function syncField(a, b) {
 function morphNode(a, b, parent) {
   if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) { parent.replaceChild(document.importNode(b, true), a); return; }
   if (b.nodeType !== 1) { if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
-  if (a.nodeName === 'CANVAS') return; // полотна малює код (розмір, позиція) — їх не чіпаємо
+  // полотна малює код (розмір, позиція) — їх не чіпаємо, але id й клас синхронізуємо: інакше при появі нової доріжки полотно лишається зі старим id,
+  // з'являються однакові id, і мініатюри чи хвилі малюються не на тій доріжці
+  if (a.nodeName === 'CANVAS') { if (a.id !== b.id) a.id = b.id; if (a.className !== b.className) a.className = b.className; return; }
   syncAttrs(a, b);
   if (FIELD.test(a.nodeName)) { syncField(a, b); if (a.nodeName !== 'SELECT') return; morphChildren(a, b); return; }
   morphChildren(a, b);

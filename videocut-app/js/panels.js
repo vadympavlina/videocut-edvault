@@ -227,6 +227,31 @@ export function initInspector() {
   box().addEventListener('input', onInput);
   box().addEventListener('change', onChange);
   box().addEventListener('click', onClick);
+  // клік по значенню біля повзунка: ввести точне число з клавіатури
+  box().addEventListener('click', e => {
+    const a = e.target.closest('.prow .aux'); if (!a || a.querySelector('input')) return;
+    const r = a.closest('.prow').querySelector('input[type=range]'); if (!r) return;
+    const m = a.textContent.trim().match(/^(-?[\d.,]+)\s*(.*)$/); if (!m) return;
+    const suffix = m[2], k = suffix === '%' ? 100 : 1;
+    const inp = document.createElement('input');
+    inp.className = 'aux-edit'; inp.type = 'text'; inp.inputMode = 'decimal'; inp.value = m[1].replace(',', '.'); inp.setAttribute('aria-label', 'Точне значення' + (suffix ? ', ' + suffix : ''));
+    a.textContent = ''; a.appendChild(inp); inp.focus(); inp.select();
+    let done = false;
+    const fin = ok => {
+      if (done) return; done = true;
+      const v = parseFloat(inp.value.replace(',', '.'));
+      if (ok && isFinite(v)) {
+        const min = +r.min, max = +r.max, step = +r.step || 0.01;
+        let x = Math.min(max, Math.max(min, v / k));
+        x = Math.round(x / step) * step; x = +x.toFixed(4);
+        r.value = String(x);
+        r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      renderInspector();
+    };
+    inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') { ev.preventDefault(); fin(false); } });
+    inp.addEventListener('blur', () => fin(true));
+  });
   box().addEventListener('toggle', e => { const d = e.target.closest && e.target.closest('details[data-more]'); if (d) { if (d.open) openMore.add(d.dataset.more); else openMore.delete(d.dataset.more); if (d.open && d.classList.contains('fold') && !d.querySelector('.fold-body')) renderInspector(); } }, true);
   renderInspector();
 }

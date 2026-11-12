@@ -720,6 +720,55 @@ await step('підказки: системних title немає (вони пе
   await p16.close(); assert.deepEqual(errs, []);
 });
 
+await step('точне число: клік по значенню біля повзунка, Enter застосовує, Esc скасовує, межі дотримуються', async () => {
+  const p17 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  p17.on('pageerror', e => errs.push(e.message));
+  await p17.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p17.goto(`http://localhost:${port}/index.html`); await p17.waitForFunction(() => window.VideoCut);
+  await p17.setInputFiles('#fileInput', video); await p17.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p17.waitForTimeout(900);
+  await p17.locator('.tl-lanes .clip').first().click();
+  await p17.locator('#inspector [data-f="zoom"]').waitFor();
+  const zoom = () => p17.evaluate(() => window.VideoCut.S.project.clips[0].zoom);
+  await p17.locator('#inspector .prow:has([data-f="zoom"]) .aux').click();
+  await p17.keyboard.press('Control+a'); await p17.keyboard.type('2,5'); await p17.keyboard.press('Enter'); await p17.waitForTimeout(300);
+  assert.equal(await zoom(), 2.5, 'введене число застосоване');
+  await p17.locator('#inspector .prow:has([data-f="zoom"]) .aux').click(); await p17.keyboard.press('Control+a'); await p17.keyboard.type('9'); await p17.keyboard.press('Enter'); await p17.waitForTimeout(300);
+  assert.equal(await zoom(), 4, 'значення обмежене максимумом повзунка');
+  await p17.locator('#inspector .prow:has([data-f="zoom"]) .aux').click(); await p17.keyboard.press('Control+a'); await p17.keyboard.type('1.5'); await p17.keyboard.press('Escape'); await p17.waitForTimeout(300);
+  assert.equal(await zoom(), 4, 'Esc скасував'); assert.equal(await p17.evaluate(() => !!window.VideoCut.S.sel), true, 'Esc у полі не знімає виділення');
+  await p17.locator('#inspector [data-a="itab"][data-v="time"]').click();
+  await p17.locator('#inspector .prow:has([data-f="fadeIn"]) .aux').click(); await p17.keyboard.press('Control+a'); await p17.keyboard.type('1,2'); await p17.keyboard.press('Enter'); await p17.waitForTimeout(300);
+  assert.equal(await p17.evaluate(() => window.VideoCut.S.project.clips[0].fadeIn), 1.2, 'секунди');
+  await p17.close(); assert.deepEqual(errs, []);
+});
+
+await step('доріжки: полотна мініатюр лишаються на своїх доріжках, коли з\u2019являється нова (немає дублів id), таймлайн росте під вміст', async () => {
+  const p18 = await browser.newPage({ viewport: { width: 1600, height: 900 } }); const errs = [];
+  p18.on('pageerror', e => errs.push(e.message));
+  await p18.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p18.goto(`http://localhost:${port}/index.html`); await p18.waitForFunction(() => window.VideoCut);
+  await p18.evaluate(() => localStorage.removeItem('ev_vc_tl_h')); await p18.reload(); await p18.waitForFunction(() => window.VideoCut);
+  await p18.setInputFiles('#fileInput', [video, ramp, audio]); await p18.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p18.waitForTimeout(1500);
+  const lanes = () => p18.evaluate(() => [...document.querySelectorAll('#tlLanes .lane')].map(l => l.className.split(' ')[1] + ':' + [...l.querySelectorAll('canvas')].map(c => c.id).join(',')));
+  const before = await lanes();
+  await p18.evaluate(async () => { const V = window.VideoCut, { addOverlay } = await import('./videocut-app/js/ops.js'); const m = [...V.media.values()].filter(x => x.kind === 'video').pop(); addOverlay('video', { mediaId: m.id, start: 0 }); });
+  await p18.waitForTimeout(500);
+  await p18.evaluate(async () => { const { addOverlay } = await import('./videocut-app/js/ops.js'); addOverlay('text', { preset: 'title' }); });
+  await p18.waitForTimeout(500);
+  const after = await lanes();
+  const want = { 'lane-v2': 'tlV2Canvas', 'lane-v': 'tlVCanvas', 'lane-a': 'tlACanvas' };
+  for (const l of after) { const [k, ids] = l.split(':'); if (want[k]) assert.equal(ids, want[k], `у доріжці ${k} полотно ${ids}: ${JSON.stringify(after)}`); }
+  const ids = await p18.evaluate(() => [...document.querySelectorAll('#tlLanes canvas')].map(c => c.id));
+  assert.equal(new Set(ids).size, ids.length, 'id полотен унікальні: ' + ids);
+  // мініатюри основної доріжки справді намальовані на ній, а не на сусідній
+  const painted = await p18.evaluate(() => { const px = id => { const c = document.getElementById(id); if (!c) return -1; const g = c.getContext('2d'); const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4 * 17) if (d[i] > 0) n++; return n; }; return { v: px('tlVCanvas'), v2: px('tlV2Canvas') }; });
+  assert.ok(painted.v > 50, 'основна доріжка має мініатюри: ' + JSON.stringify(painted));
+  // таймлайн підріс, щоб вмістити всі доріжки (4 і більше)
+  const fit = await p18.evaluate(() => { const tl = document.getElementById('tl'); return { h: Math.round(tl.getBoundingClientRect().height), need: parseInt(getComputedStyle(tl).getPropertyValue('--tl-fit')), inner: document.getElementById('tlLanes').getBoundingClientRect().height, scroll: document.getElementById('tlScroll').scrollHeight > document.getElementById('tlScroll').clientHeight + 2 }; });
+  assert.ok(fit.h > 260 && !fit.scroll, 'усі доріжки видно без прокрутки: ' + JSON.stringify(fit));
+  await p18.close(); assert.deepEqual(errs, []);
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

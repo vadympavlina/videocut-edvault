@@ -1090,3 +1090,11 @@ body.tl-dragging .it .h{cursor:inherit}
 .prow.stack .seg{grid-auto-flow:row;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));grid-auto-columns:auto}
 .th-b{width:24px;height:24px}
 .isec-h .reset{min-height:24px;padding:3px 8px}
+.prow .aux{cursor:text}
+.prow .aux:hover{border-color:var(--accent)}
+.aux-edit{width:100%;min-width:40px;border:0;background:transparent;color:var(--text);text-align:right;font:inherit;padding:0;outline:none}
+.prow .aux:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light)}
+/* підказка про дію з'являється зверху, щоб не закривати таймлайн */
+.toast{bottom:auto;top:52px}
+.toast:not(.show){transform:translate(-50%,-12px)}
+html.tl-auto .tl{height:min(var(--tl-fit,250px),max(var(--tl-h),min(var(--tl-fit,250px),44vh)))}

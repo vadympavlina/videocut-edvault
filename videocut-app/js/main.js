@@ -53,8 +53,9 @@ on('project', d => { if (d && d.committed) fitStage(); });
   const sp = $('splitter');
   let saved = 0;
   try { saved = +localStorage.getItem('ev_vc_tl_h') || 0; } catch (e) { /* ignore */ }
-  if (saved) document.documentElement.style.setProperty('--tl-h', saved + 'px');
+  if (saved) document.documentElement.style.setProperty('--tl-h', saved + 'px'); else document.documentElement.classList.add('tl-auto'); // висоту ще не задавали вручну: таймлайн росте, щоб вмістити доріжки
   sp.addEventListener('pointerdown', e => {
+    document.documentElement.classList.remove('tl-auto');
     sp.setPointerCapture(e.pointerId); sp.classList.add('active');
     const startY = e.clientY, startH = $('tl').getBoundingClientRect().height;
     const mv = ev => {

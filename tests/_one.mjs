@@ -41,31 +41,32 @@ await page.setInputFiles('#fileInput', video);
 await page.waitForFunction(() => window.VideoCut?.S.project.clips.length > 0, null, { timeout: 20000 });
 await page.waitForTimeout(1500);
 
-await step('кольорова схема (LUT): імпорт .cube, інверсія кольорів на кадрі, збереження в проєкті, нечитабельний файл дає повідомлення', async () => {
-  const p26 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
-  p26.on('pageerror', e => errs.push(e.message));
-  await p26.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
-  await p26.goto(`http://localhost:${port}/index.html`); await p26.waitForFunction(() => window.VideoCut);
-  await p26.setInputFiles('#fileInput', video); await p26.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p26.waitForTimeout(1000);
-  await p26.evaluate(() => window.VideoCut.seek(1)); await p26.waitForTimeout(500);
-  const px = () => p26.evaluate(() => { const c = document.getElementById('pv'); const d = c.getContext('2d').getImageData(c.width / 2, c.height * 0.9, 1, 1).data; return [d[0], d[1], d[2]]; });
-  await p26.locator('.tl-lanes .clip').first().click();
-  await p26.click('#inspector [data-a="itab"][data-v="look"]');
-  const before = await px();
-  const rows = ['TITLE "Інверсія"', 'LUT_3D_SIZE 2']; for (let b = 0; b < 2; b++) for (let g = 0; g < 2; g++) for (let r = 0; r < 2; r++) rows.push(`${1 - r} ${1 - g} ${1 - b}`);
-  await p26.setInputFiles('#lutInput', { name: 'inv.cube', mimeType: 'text/plain', buffer: Buffer.from(rows.join('\n')) });
-  await p26.waitForFunction(() => window.VideoCut.S.project.luts && window.VideoCut.S.project.luts.length === 1); await p26.waitForTimeout(700);
-  const after = await px();
-  const diff = before.reduce((s, v, i) => s + Math.abs(v - after[i]), 0);
-  assert.ok(diff > 150, 'кольори змінилися: ' + JSON.stringify(before) + ' -> ' + JSON.stringify(after));
-  assert.equal(await p26.evaluate(() => !!window.VideoCut.S.project.clips[0].lut), true);
-  await p26.click('#inspector [data-a="lutPick"][data-v=""]'); await p26.waitForTimeout(500);
-  const back = await px(); assert.ok(before.reduce((s, v, i) => s + Math.abs(v - back[i]), 0) < 60, 'без схеми кадр повернувся: ' + JSON.stringify(back));
-  await p26.click('#inspector [data-a="lutAdd"]').catch(() => {});
-  await p26.setInputFiles('#lutInput', { name: 'bad.cube', mimeType: 'text/plain', buffer: Buffer.from('hello') });
-  await p26.waitForSelector('.toast, [role="status"]', { timeout: 4000 }).catch(() => {});
-  assert.equal(await p26.evaluate(() => window.VideoCut.S.project.luts.length), 1, 'погана схема не додалась');
-  await p26.close(); assert.deepEqual(errs, []);
+await step('стабілізація: аналіз знаходить тремтіння, зі стабілізацією кадр коливається помітно менше', async () => {
+  const shaky = join(tmp, 'shaky.webm');
+  ff('-f', 'lavfi', '-i', 'testsrc2=size=800x450:rate=30:duration=6', '-vf', "crop=640:360:80+22*sin(2*PI*2.5*t)+9*sin(2*PI*5.1*t):45+14*sin(2*PI*1.9*t)", '-c:v', 'libvpx', '-b:v', '1500k', shaky);
+  const p27 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
+  p27.on('pageerror', e => errs.push(e.message));
+  await p27.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p27.goto(`http://localhost:${port}/index.html`); await p27.waitForFunction(() => window.VideoCut);
+  await p27.setInputFiles('#fileInput', shaky); await p27.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p27.waitForTimeout(1200);
+  const jitter = () => p27.evaluate(async () => {
+    const V = window.VideoCut, { estimateShift } = await import('./videocut-app/js/stab.js');
+    const cv = document.getElementById('pv'), c2 = document.createElement('canvas'); c2.width = 96; c2.height = 54; const x2 = c2.getContext('2d', { willReadFrequently: true });
+    const gray = () => { x2.drawImage(cv, 0, 0, 96, 54); const d = x2.getImageData(0, 0, 96, 54).data, g = new Float32Array(96 * 54); for (let i = 0; i < g.length; i++) g[i] = d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11; return g; };
+    let prev = null, sum = 0, n = 0;
+    for (let i = 0; i < 40; i++) { V.seek(0.4 + i / 15); await new Promise(r => setTimeout(r, 140)); const g = gray(); if (prev) { const s = estimateShift(prev, g, 96, 54, 6); sum += Math.abs(s.x) + Math.abs(s.y); n++; } prev = g; }
+    return sum / n;
+  });
+  await p27.locator('.tl-lanes .clip').first().click();
+  const raw = await jitter();
+  await p27.locator('.tl-lanes .clip').first().click();
+  await p27.click('[data-a="stabRun"]');
+  await p27.waitForFunction(() => window.VideoCut.S.project.clips[0].stab, null, { timeout: 60000 });
+  const st = await p27.evaluate(() => { const c = window.VideoCut.S.project.clips[0]; return { on: c.stabOn, n: c.stab.dx.length, z: c.stab.zoom, mx: Math.max(...c.stab.dx.map(Math.abs)) }; });
+  assert.ok(st.on && st.n >= 60 && st.z > 1.02 && st.mx > 0.01, 'дані стабілізації: ' + JSON.stringify(st));
+  const fixed = await jitter();
+  assert.ok(fixed < raw * 0.75, `коливання кадру ${raw.toFixed(2)} -> ${fixed.toFixed(2)}`);
+  await p27.close(); assert.deepEqual(errs, []);
 });
 
 await browser.close(); srv.close();

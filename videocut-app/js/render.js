@@ -1,6 +1,7 @@
 // Малювання кадру сцени — однаково для перегляду й експорту.
 import { resolveKf, hasKf } from './kf.js';
 import { applyLut } from './lut.js';
+import { stabAt } from './stab.js';
 // provider(layoutItem, sourceTime) → {src: CanvasImageSource | VideoSample, w, h} | null
 import { S, media, layout, clipAt, srcTime, laneVisible } from './state.js';
 import { capStyle, drawCaption, capState, capBox } from './cc.js';
@@ -309,6 +310,8 @@ function drawFitted(ctx, c, f, W, H, prog = 0) {
   const dw0 = fw * r, dh0 = fh * r;
   if (fit === 'blur' && Math.abs(fw / fh - W / H) > 0.01) drawBlurBg(ctx, c, f, W, H, rot, fw, fh, { x: (W - dw0) / 2, y: (H - dh0) / 2, w: dw0, h: dh0 });
   let z = Math.max(1, c.zoom || 1);
+  const sc = c.stab && c.stabOn ? stabAt(c.stab, (c.in || 0) + clamp01(prog) * ((c.out || 0) - (c.in || 0))) : null;
+  if (sc) z *= c.stab.zoom || 1;
   let fx = c.zx ?? 0.5, fy = c.zy ?? 0.5;
   const mo = c.motion;
   if (mo && mo !== 'none') {
@@ -325,6 +328,7 @@ function drawFitted(ctx, c, f, W, H, prog = 0) {
     if (dw >= W) x = Math.min(0, Math.max(W - dw, x));
     if (dh >= H) y = Math.min(0, Math.max(H - dh, y));
   }
+  if (sc) { x += sc.x * dw; y += sc.y * dh; }
   const filt = FILTERS_OK ? lookFilter(c) : 'none';
   if (filt !== 'none') ctx.filter = filt;
   drawOriented(ctx, f, x + dw / 2, y + dh / 2, dw, dh, rot, !!c.flip);

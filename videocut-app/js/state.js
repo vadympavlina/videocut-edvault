@@ -43,6 +43,7 @@ export function repairProject(p) {
   for (const c of out.clips) { time(c, 'in', 0); c.out = num(c.out, c.in + 1); if (c.out <= c.in) c.out = c.in + 0.1; c.speed = Math.min(8, Math.max(0.1, num(c.speed, 1))); }
   for (const m of out.music) { time(m, 'in', 0); m.out = num(m.out, m.in + 1); if (m.out <= m.in) m.out = m.in + 0.1; }
   out.luts = Array.isArray(p.luts) ? p.luts.filter(l => isObj(l) && l.id && Number.isInteger(l.size) && l.size >= 2 && l.size <= 64 && typeof l.b64 === 'string').slice(0, 24) : [];
+  for (const c of out.clips) if (c.stab && !(isObj(c.stab) && Array.isArray(c.stab.dx) && Array.isArray(c.stab.dy) && c.stab.dx.length === c.stab.dy.length && c.stab.dx.every(Number.isFinite) && c.stab.dy.every(Number.isFinite) && Number.isFinite(c.stab.fps) && Number.isFinite(c.stab.t0))) { delete c.stab; delete c.stabOn; }
   for (const c of out.clips) if (c.lut && !out.luts.some(l => l.id === c.lut.id)) delete c.lut;
   for (const o of [...out.clips, ...out.overlays]) { if (!Array.isArray(o.kf)) delete o.kf; else { o.kf = o.kf.filter(k => isObj(k) && Number.isFinite(k.t)).sort((x, y) => x.t - y.t); if (!o.kf.length) delete o.kf; } }
   for (const o of [...out.overlays, ...out.music]) if (o.row != null && !(Number.isInteger(o.row) && o.row >= 0 && o.row < 50)) delete o.row;

@@ -5,6 +5,7 @@ import { addToTimeline, addOverlay, addLayerAt, TEXT_PRESETS, splitAt, duplicate
 import { removeMedia, thumbAt } from './media.js';
 import { seek } from './player.js';
 import { parseCube } from './lut.js';
+import { analyze as analyzeStab } from './stab.js';
 import { DENOISE_LEVELS } from './denoise.js';
 import { hasKf, keyHere, setKeyHere, removeKeyHere, autoKey, syncBase, localTime, itemLength } from './kf.js';
 import { parseSubtitles } from './srt.js';
@@ -321,6 +322,27 @@ function motionSec(kind, o) {
     ${has ? `<button type="button" class="btn btn-sm btn-icon" data-a="kfStep" data-v="-1" data-tip="Попередній ключовий кадр" aria-label="Попередній ключовий кадр">${icon('chevL')}</button><button type="button" class="btn btn-sm btn-icon" data-a="kfStep" data-v="1" data-tip="Наступний ключовий кадр" aria-label="Наступний ключовий кадр">${icon('chevR')}</button>` : ''}</div>
     ${has ? `<div class="kflist">${list}</div><div class="iaction"><button type="button" class="btn btn-outline btn-sm btn-block" data-a="kfClear">Прибрати весь рух</button></div>` : ''}`);
 }
+// Стабілізація кадру
+const stabBusy = new Map(); // id кліпа -> частка виконаного
+function stabSec(c, m) {
+  if (!m || m.kind !== 'video') return '';
+  const busy = stabBusy.get(c.id);
+  const body = busy != null
+    ? `<div class="prow stack"><label>Аналізую рух камери</label><div class="stab-bar"><i style="width:${Math.round(busy * 100)}%"></i></div></div>`
+    : c.stab
+      ? `${seg('stabOn', 'Стабілізація', [[true, 'Увімкнена'], [false, 'Вимкнена']], !!c.stabOn)}<div class="iaction"><button type="button" class="btn btn-outline btn-sm btn-block" data-a="stabRun">Проаналізувати знову</button></div>`
+      : `<p class="hint">Згладжує тремтіння ручної зйомки. Кадр трохи збільшиться, щоб сховати краї. Аналіз іде у вашому браузері, відео нікуди не надсилається.</p><div class="iaction"><button type="button" class="btn btn-outline btn-sm btn-block" data-a="stabRun">${icon('fit')}Стабілізувати кадр</button></div>`;
+  return sec('Стабілізація', body, c.stab ? 'stab:del,stabOn:false' : '');
+}
+async function runStab(c) {
+  const m = media.get(c.mediaId); if (!m || !m.vt || !m.canDecodeV || stabBusy.has(c.id)) { if (m && !m.vt) toast('Для цього файлу стабілізація недоступна', 'err'); return; }
+  stabBusy.set(c.id, 0); renderInspector();
+  try {
+    const st = await analyzeStab(m, c.in || 0, c.out || m.duration, p => { stabBusy.set(c.id, p); if (S.sel && S.sel.id === c.id) renderInspector(); }, () => S.project.clips.includes(c));
+    c.stab = st; c.stabOn = true; commit('Стабілізація'); toast('Стабілізацію увімкнено', 'ok');
+  } catch (e) { console.warn(e); if (e.message !== 'Скасовано') toast('Не вдалося проаналізувати відео', 'err'); }
+  stabBusy.delete(c.id); emit('project', { from: 'insp' }); renderInspector();
+}
 const sec = (title, html, reset = '') => `<section class="isec"><h2 class="isec-h"><span>${title}</span>${reset ? `<button type="button" class="reset" data-a="reset" data-v="${reset}" data-tip="Повернути типові значення" aria-label="Скинути розділ «${title}»">Скинути</button>` : ''}</h2>${html}</section>`;
 
 // вкладки: вміст будується лише для відкритої, пам'ятаємо вибір для кожного типу елемента
@@ -410,6 +432,7 @@ function clipPanel(c) {
   const speedHint = sp === 1 ? '' : sp > 1 ? 'Голос залишиться природним, без «мультяшного» ефекту.' : 'Уповільнення зручне, щоб показати швидкі дії.';
   const frame = () => sec('Масштаб і положення', `${range('zoom', 'Наближення', 1, 4, 0.05, z, '×', z.toFixed(2).replace('.', ',') + '×')}
       ${z > 1.001 ? '<p class="hint">Перетягніть хрестик на перегляді туди, що треба показати ближче.</p>' : ''}`, 'zoom:1,zx:0.5,zy:0.5') + motionSec('clip', c) +
+    stabSec(c, m) +
     sec('Поворот і дзеркало', `<div class="prow stack"><div class="seg"><button data-a="rot" data-v="-90" aria-label="Повернути вліво">${icon('rotL')}</button><button data-a="rot" data-v="90" aria-label="Повернути вправо">${icon('rotR')}</button><button data-a="flip" class="${c.flip ? 'on' : ''}" aria-label="Дзеркало">${icon('flipH')}</button></div></div>
       <p class="hint">Для відео з телефона, знятого боком.</p>`, 'rot:0,flip:false') +
     sec('Поля кадру', seg('fit', 'Чим заповнити', [['blur', 'Розмиті'], ['contain', 'Чорні'], ['cover', 'Обрізати']], c.fit || 'contain', otherShape ? 'Форма відео відрізняється від кадру проєкту.' : ''), 'fit:blur') +
@@ -747,6 +770,7 @@ function onClick(e) {
       }
       commit(); if (aspect) emit('aspect'); renderInspector();
     } break;
+    case 'stabRun': if (o && S.sel.kind === 'clip') runStab(o); break;
     case 'lutAdd': $('lutInput').click(); break;
     case 'lutPick': if (o) { const id = b.dataset.v; if (id) o.lut = { id, mix: o.lut ? o.lut.mix ?? 1 : 1 }; else delete o.lut; commit('Кольорова схема'); renderInspector(); } break;
     case 'kfAdd': if (o) {

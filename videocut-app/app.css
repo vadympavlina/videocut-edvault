@@ -1098,3 +1098,14 @@ body.tl-dragging .it .h{cursor:inherit}
 .toast{bottom:auto;top:52px}
 .toast:not(.show){transform:translate(-50%,-12px)}
 html.tl-auto .tl{height:min(var(--tl-fit,250px),max(var(--tl-h),min(var(--tl-fit,250px),44vh)))}
+
+/* історія змін */
+.modal-hist{width:min(440px,94vw)}
+.hist-list{list-style:none;margin:8px 0 0;padding:0;max-height:min(420px,56vh);overflow-y:auto;display:grid;gap:2px}
+.hist-row{width:100%;display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;text-align:left;font-size:13px}
+.hist-row:hover{background:var(--surface2)}
+.hist-row .hn{min-width:22px;color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+.hist-row .hl{flex:1}
+.hist-row em{font-style:normal;font-size:11px;color:var(--muted)}
+.hist-row.cur{background:var(--accent-light);color:var(--accent);font-weight:600}
+.hist-row.undone{color:var(--muted)}

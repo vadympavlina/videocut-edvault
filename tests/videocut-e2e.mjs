@@ -769,6 +769,37 @@ await step('доріжки: полотна мініатюр лишаються �
   await p18.close(); assert.deepEqual(errs, []);
 });
 
+await step('історія змін: кроки мають назви, підказки «Скасувати: …», вікно історії повертає до будь-якого кроку', async () => {
+  const p19 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  p19.on('pageerror', e => errs.push(e.message));
+  await p19.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p19.goto(`http://localhost:${port}/index.html`); await p19.waitForFunction(() => window.VideoCut);
+  await p19.setInputFiles('#fileInput', video); await p19.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p19.waitForTimeout(900);
+  const labels = () => p19.evaluate(async () => { const s = await import('./videocut-app/js/state.js'); return s.historyList().items.map(i => i.label); });
+  await p19.evaluate(() => window.VideoCut.seek(4)); await p19.keyboard.press('s'); await p19.waitForTimeout(150);
+  await p19.evaluate(async () => { const { addOverlay } = await import('./videocut-app/js/ops.js'); addOverlay('text', { preset: 'title' }); });
+  await p19.locator('.tl-lanes .clip').first().click();
+  await p19.locator('#inspector [data-a="itab"][data-v="time"]').click();
+  await p19.locator('#inspector [data-set="speed"][data-v="1.5"]').click(); await p19.waitForTimeout(200);
+  await p19.locator('#inspector [data-a="itab"][data-v="look"]').click();
+  await p19.evaluate(() => { const o = window.VideoCut.S.project.clips[0]; o.look = 'warm'; window.VideoCut.commit(); });
+  const L = await labels();
+  assert.deepEqual(L, ['Початок', 'Додати кліп', 'Розрізати', 'Додати текст', 'Швидкість', 'Фільтр і колір'], JSON.stringify(L));
+  assert.match(await p19.getAttribute('#btnUndo', 'data-tip'), /Скасувати: Фільтр і колір/);
+  await p19.keyboard.press('Control+z');
+  assert.match(await p19.getAttribute('#btnRedo', 'data-tip'), /Повторити: Фільтр і колір/); assert.match(await p19.getAttribute('#btnUndo', 'data-tip'), /Скасувати: Швидкість/);
+  await p19.keyboard.press('Control+Shift+z');
+  await p19.click('#menubar [data-m="1"]'); await p19.locator('.mb-dd .mb-it', { hasText: 'Історія змін' }).click(); await p19.waitForTimeout(300);
+  assert.equal(await p19.locator('#histList .hist-row').count(), 6);
+  assert.ok(await p19.locator('#histList .hist-row.cur', { hasText: 'Фільтр' }).count(), 'поточний крок позначено');
+  await p19.locator('#histList .hist-row', { hasText: 'Додати текст' }).click(); await p19.waitForTimeout(300);
+  assert.deepEqual(await p19.evaluate(() => ({ clips: window.VideoCut.S.project.clips.map(c => c.speed || 1), look: window.VideoCut.S.project.clips[0].look || 'none', ov: window.VideoCut.S.project.overlays.length })), { clips: [1, 1], look: 'none', ov: 1 }, 'повернулись до кроку «Додати текст»');
+  assert.equal(await p19.locator('#histList .hist-row.undone').count(), 2, 'наступні кроки лишились доступними');
+  await p19.locator('#histList .hist-row', { hasText: 'Фільтр' }).click(); await p19.waitForTimeout(200);
+  assert.equal(await p19.evaluate(() => window.VideoCut.S.project.clips[0].look), 'warm', 'перехід уперед до останнього кроку');
+  await p19.close(); assert.deepEqual(errs, []);
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

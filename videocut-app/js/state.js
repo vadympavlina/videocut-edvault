@@ -130,12 +130,62 @@ export function laneAudible(k) {
 }
 
 // ── історія ──
-const undoStack = [], redoStack = [];
+// Кожен крок має людську назву: її визначаємо автоматично за різницею між станами (див. describeChange).
+const undoStack = [], redoStack = []; // { s: знімок до дії, label: що було зроблено }
 let last = JSON.stringify(S.project);
-export function commit() {
+const ITEM_KEYS = { clips: 'clip', overlays: 'overlay', captions: 'caption', music: 'music' };
+const PROP_LABELS = [
+  [['speed'], 'Швидкість'], [['volume', 'duck'], 'Гучність'], [['muted'], 'Звук увімкнено/вимкнено'], [['fadeIn', 'fadeOut'], 'Поява й зникнення'],
+  [['zoom', 'zx', 'zy'], 'Масштаб кадру'], [['look', 'bri', 'con', 'sat'], 'Фільтр і колір'], [['tr'], 'Перехід'], [['rot', 'flip'], 'Поворот чи дзеркало'],
+  [['fit'], 'Поля кадру'], [['motion'], 'Рух кадру'], [['text'], 'Текст'], [['size', 'weight', 'color', 'bg', 'bgColor', 'bgAlpha', 'align'], 'Вигляд тексту'],
+  [['stroke', 'radius', 'fill', 'strength', 'pixel', 'dim', 'emoji'], 'Вигляд елемента'], [['opacity'], 'Прозорість'], [['blend'], 'Режим накладання'],
+  [['key'], 'Зелений екран'], [['shape', 'crop', 'cropL', 'cropR', 'cropT', 'cropB', 'border', 'shadow'], 'Форма й рамка'], [['anim', 'fade'], 'Анімація'],
+  [['x', 'y', 'w', 'h'], 'Положення на кадрі'], [['row'], 'Інша доріжка'],
+];
+const OV_ADD = { text: 'Додати текст', arrow: 'Додати стрілку', rect: 'Додати рамку', blur: 'Додати розмиття', spot: 'Додати прожектор', emoji: 'Додати емодзі', progress: 'Додати прогрес-бар', video: 'Додати відео поверх', image: 'Додати зображення поверх' };
+export function describeChange(a, b) {
+  const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+  // 1) кількість елементів
+  if (b.clips.length > a.clips.length) return a.clips.some(c => { const n = b.clips.find(x => x.id === c.id); return n && (n.out !== c.out || n.in !== c.in); }) ? 'Розрізати' : 'Додати кліп';
+  if (b.clips.length < a.clips.length) return 'Видалити кліп';
+  if (b.overlays.length > a.overlays.length) { const n = b.overlays.find(o => !a.overlays.some(x => x.id === o.id)); return n && b.overlays.length - a.overlays.length === 1 ? (OV_ADD[n.type] || 'Додати накладання') : 'Додати накладання'; }
+  if (b.overlays.length < a.overlays.length) return 'Видалити накладання';
+  if (b.captions.length > a.captions.length) return b.captions.length - a.captions.length > 2 ? 'Субтитри з мовлення чи файлу' : 'Додати субтитр';
+  if (b.captions.length < a.captions.length) return 'Видалити субтитр';
+  if (b.music.length > a.music.length) { const n = b.music.find(o => !a.music.some(x => x.id === o.id)); return n && n.voice ? 'Записати голос' : 'Додати звук'; }
+  if (b.music.length < a.music.length) return 'Видалити звук';
+  // 2) порядок кліпів
+  if (!same(a.clips.map(c => c.id), b.clips.map(c => c.id))) return 'Змінити порядок кліпів';
+  // 3) властивості проєкту
+  for (const [k, name] of [['aspect', 'Формат кадру'], ['fps', 'Частота кадрів'], ['bg', 'Колір фону'], ['name', 'Назва проєкту'], ['captionStyle', 'Вигляд субтитрів']]) if (!same(a[k], b[k])) return name;
+  if (!same(a.markers, b.markers)) return (b.markers || []).length > (a.markers || []).length ? 'Додати маркер' : (b.markers || []).length < (a.markers || []).length ? 'Прибрати маркер' : 'Змінити маркер';
+  if (!same(a.tracks, b.tracks)) {
+    for (const k of Object.keys(b.tracks || {})) for (const f of ['lock', 'hide', 'mute', 'solo']) if (!!(a.tracks || {})[k]?.[f] !== !!b.tracks[k][f]) return ({ lock: b.tracks[k].lock ? 'Заблокувати доріжку' : 'Розблокувати доріжку', hide: b.tracks[k].hide ? 'Сховати доріжку' : 'Показати доріжку', mute: b.tracks[k].mute ? 'Вимкнути звук доріжки' : 'Увімкнути звук доріжки', solo: 'Соло доріжки' })[f];
+  }
+  // 4) зміни в елементах
+  const changed = [];
+  for (const list of Object.keys(ITEM_KEYS)) for (const o of b[list]) { const p = a[list].find(x => x.id === o.id); if (p && !same(p, o)) changed.push([list, p, o]); }
+  if (changed.length) {
+    const [list, p, o] = changed[0];
+    const keys = [...new Set([...Object.keys(p), ...Object.keys(o)])].filter(k => !same(p[k], o[k]));
+    let name = null;
+    if (keys.some(k => ['start', 'in', 'out', 'dur'].includes(k))) {
+      const dur = list === 'clips' ? keys.includes('in') || keys.includes('out') : keys.includes('dur') || keys.includes('in') || keys.includes('out');
+      const moved = keys.includes('start') && !keys.some(k => ['dur', 'out'].includes(k)) && !(list === 'music' && keys.includes('in'));
+      name = moved ? 'Перемістити' : dur ? 'Обрізати' : 'Перемістити';
+    }
+    if (!name) for (const [ks, label] of PROP_LABELS) if (keys.some(k => ks.includes(k))) { name = label; break; }
+    const n = changed.filter(c => c[0] === list).length; // зсув інших елементів — наслідок, а не окрема дія
+    return (name || 'Зміна') + (n > 1 ? ` (${n})` : '');
+  }
+  return 'Зміна';
+}
+export function commit(label) {
   const snap = JSON.stringify(S.project);
   if (snap === last) return false;
-  undoStack.push(last);
+  let name = label;
+  if (!name) { try { name = describeChange(JSON.parse(last), JSON.parse(snap)); } catch { name = 'Зміна'; } }
+  undoStack.push({ s: last, label: name });
   if (undoStack.length > 150) undoStack.shift();
   redoStack.length = 0;
   last = snap;
@@ -153,11 +203,34 @@ function restore(snap) {
   emit('select');
   emit('history');
 }
-export function undo() { if (!undoStack.length) return false; redoStack.push(last); restore(undoStack.pop()); return true; }
-export function redo() { if (!redoStack.length) return false; undoStack.push(last); restore(redoStack.pop()); return true; }
+export function undo() { if (!undoStack.length) return false; const e = undoStack.pop(); redoStack.push({ s: last, label: e.label }); restore(e.s); return true; }
+export function redo() { if (!redoStack.length) return false; const e = redoStack.pop(); undoStack.push({ s: last, label: e.label }); restore(e.s); return true; }
 export const canUndo = () => undoStack.length > 0;
 export const canRedo = () => redoStack.length > 0;
+export const undoLabel = () => (undoStack.length ? undoStack.at(-1).label : '');
+export const redoLabel = () => (redoStack.length ? redoStack.at(-1).label : '');
 export function resetHistory() { undoStack.length = 0; redoStack.length = 0; last = JSON.stringify(S.project); emit('history'); }
+// усі кроки по порядку: початок, зроблені дії, а далі ті, що можна повторити; index — де ми зараз
+export function historyList() {
+  const items = [{ label: 'Початок', state: 'done' }];
+  undoStack.forEach(e => items.push({ label: e.label, state: 'done' }));
+  const idx = undoStack.length;
+  [...redoStack].reverse().forEach(e => items.push({ label: e.label, state: 'undone' }));
+  return { items, index: idx };
+}
+// перейти до кроку i за один раз
+export function historyJump(i) {
+  const all = [...undoStack.map(e => e.s), last, ...[...redoStack].reverse().map(e => e.s)];
+  const labels = [...undoStack.map(e => e.label), ...[...redoStack].reverse().map(e => e.label)];
+  const cur = undoStack.length;
+  if (i === cur || i < 0 || i >= all.length) return false;
+  const stackSnaps = all.slice();
+  undoStack.length = 0; redoStack.length = 0;
+  for (let k = 0; k < i; k++) undoStack.push({ s: stackSnaps[k], label: labels[k] });
+  for (let k = stackSnaps.length - 1; k > i; k--) redoStack.push({ s: stackSnaps[k], label: labels[k - 1] });
+  restore(stackSnaps[i]);
+  return true;
+}
 // повернути незакомічені зміни (наприклад, після скасованого перетягування)
 export function revert() { S.project = JSON.parse(last); emit('project', { restored: true }); }
 

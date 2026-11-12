@@ -28,6 +28,7 @@
 <link rel="modulepreload" href="videocut-app/js/duck.js">
 <link rel="modulepreload" href="videocut-app/js/export-ui.js">
 <link rel="modulepreload" href="videocut-app/js/export.js">
+<link rel="modulepreload" href="videocut-app/js/history-ui.js">
 <link rel="modulepreload" href="videocut-app/js/layer.js">
 <link rel="modulepreload" href="videocut-app/js/main.js">
 <link rel="modulepreload" href="videocut-app/js/media.js">
@@ -323,6 +324,15 @@
       <span>Показати все</span><span><kbd>Shift</kbd> <kbd>Z</kbd></span>
       <span>Експорт</span><span><kbd>Ctrl</kbd> <kbd>E</kbd></span>
     </div>
+  </div>
+</div>
+
+<!-- Історія змін -->
+<div class="overlay" id="historyModal">
+  <div class="modal modal-hist" role="dialog" aria-modal="true" aria-labelledby="histTitle">
+    <div class="modal-head"><h3 id="histTitle">Історія змін</h3><button class="btn btn-icon" data-close data-tip="Закрити"><span data-icon="x"></span></button></div>
+    <p class="hint">Клацніть на крок, щоб повернутися до нього. Кроки після нього лишаться, поки ви не зробите нову зміну.</p>
+    <ol class="hist-list" id="histList"></ol>
   </div>
 </div>
 

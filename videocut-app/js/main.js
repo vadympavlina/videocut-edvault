@@ -16,6 +16,7 @@ import { openVoice, stopVoice, isRecording } from './voice.js';
 import { DB, takeHandoff } from './db.js';
 import { packProject, unpackProject, PROJ_EXT } from './projfile.js';
 import { initDock } from './dock.js';
+import { initHistoryUi, openHistory } from './history-ui.js';
 import { initA11y } from './a11y.js';
 import { initView } from './viewctl.js';
 import { initAsr, openAsr, asrBusy } from './asr.js';
@@ -450,6 +451,7 @@ window.addEventListener('unhandledrejection', e => onErr(e.reason));
 })();
 
 initDock();
+initHistoryUi();
 // Ctrl+A: усі елементи на доріжках, що не заблоковані
 function selectAll() {
   const P = S.project, all = [];
@@ -516,6 +518,7 @@ window.addEventListener('beforeunload', e => { if (isRecording() || asrBusy() ||
     { label: 'Редагування', items: [
       { label: 'Скасувати', ic: 'undo', key: 'Ctrl+Z', enabled: canUndo, run: () => undo() },
       { label: 'Повторити', ic: 'redo', key: 'Ctrl+Shift+Z', enabled: canRedo, run: () => redo() },
+      { label: 'Історія змін…', ic: 'undo', enabled: () => canUndo() || canRedo(), run: openHistory },
       { sep: true },
       { label: 'Вирізати', key: 'Ctrl+X', enabled: hasSel, run: () => copySel(true) },
       { label: 'Копіювати', ic: 'copy', key: 'Ctrl+C', enabled: hasSel, run: () => copySel() },

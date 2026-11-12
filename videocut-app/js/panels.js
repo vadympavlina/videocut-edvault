@@ -16,6 +16,10 @@ const EMOJIS = ['👍', '👏', '✅', '❌', '⭐', '🔥', '❗', '❓', '💡
 // ══════════ Ліва панель ══════════
 let tab = 'media';
 let mediaFilter = 'all';
+const libQ = {}, libOpen = { shapes: true, stickers: true, cards: true, pip: true, imgs: true };
+const searchBox = ph => `<label class="lib-search">${icon('search')}<input type="search" data-libq autocomplete="off" placeholder="${ph}" aria-label="${ph}" value="${esc(libQ[tab] || '')}"></label>`;
+const lfold = (key, name, n, html) => `<details class="lfold" data-lfold="${key}"${libOpen[key] ? ' open' : ''}><summary><span>${name}</span><i>${n}</i></summary><div class="lfold-b">${html}</div></details>`;
+const KIND_NAME = { video: 'Відео', image: 'Фото', audio: 'Звук' };
 const tabScroll = {};
 export function initLibrary() {
   $('libTabs').addEventListener('click', e => {
@@ -25,6 +29,8 @@ export function initLibrary() {
     $('libBody').scrollTop = tabScroll[tab] || 0; // кожна вкладка пам'ятає, де ви зупинились
   });
   $('libBody').addEventListener('click', onLibClick);
+  $('libBody').addEventListener('input', e => { const i = e.target.closest('[data-libq]'); if (!i) return; libQ[tab] = i.value; applyLibFilter(); });
+  $('libBody').addEventListener('toggle', e => { const d = e.target.closest && e.target.closest('details[data-lfold]'); if (d && !d.hidden) libOpen[d.dataset.lfold] = d.open; }, true);
   $('libBody').addEventListener('dblclick', e => {
     const card = e.target.closest('.mcard'); if (!card) return;
     const m = media.get(card.dataset.id); if (m) addToTimeline(m);
@@ -88,48 +94,53 @@ function drawLibrary() {
     setHtml(body, `
       <button class="drop${all.length ? ' drop-sm' : ''}" id="btnImport2">${icon('upload')}<b>Додати файли</b>${all.length ? '' : '<span>Відео, фото або аудіо — або перетягніть їх у вікно</span>'}</button>
       ${showFilter ? `<div class="seg lib-filter">${KINDS.map(([k, n]) => `<button data-filter="${k}" class="${mediaFilter === k ? 'on' : ''}">${n}</button>`).join('')}</div>` : ''}
-      ${items.length ? `<div class="mgrid">${items.map(m => {
+      ${items.length ? `<div class="mlist">${items.map(m => {
         let url = thumbCache.get(m.id + ':' + m.thumbs.length);
         if (url === undefined && m.thumbs.length) { url = thumbURL(m); thumbCache.set(m.id + ':' + m.thumbs.length, url); }
-        return `<div class="mcard${used.has(m.id) ? ' used' : ''}" data-id="${m.id}" title="${esc(m.name)}" draggable="true">
+        return `<div class="mcard mrow${used.has(m.id) ? ' used' : ''}" data-id="${m.id}" title="${esc(m.name)}" draggable="true">
           <div class="mthumb">${url ? `<img src="${url}" alt="" draggable="false">` : icon(m.kind === 'audio' ? 'music' : m.kind === 'image' ? 'image' : 'video')}
             ${m.kind !== 'image' ? `<span class="mdur">${fmt(m.duration)}</span>` : ''}
             ${m.analyzing ? '<span class="mbusy"></span>' : ''}
             ${m.proxy && m.proxy.state === 'working' ? `<span class="mproxy" title="Готуємо легку копію для плавного перегляду. Експорт піде з оригіналу.">Копія ${Math.round(m.proxy.p * 100)}%</span>` : m.proxyUrl ? '<span class="mproxy ok" title="Перегляд іде з легкою копією (720p), а експорт — з оригіналу в повній якості.">720p</span>' : ''}
+          </div>
+          <div class="minfo"><div class="mname">${esc(m.name)}</div><div class="msub">${KIND_NAME[m.kind] || ''}${m.kind !== 'image' ? ' · ' + fmt(m.duration) : ''}${used.has(m.id) ? ' · <em>використано</em>' : ''}</div></div>
             <button class="mquick" data-act="add" data-tip="${m.kind === 'audio' ? 'Додати на звукову доріжку' : 'Додати в кінець таймлайну'}" aria-label="Додати на таймлайн">${icon('plus')}</button>
             <div class="mact">
               ${m.kind !== 'audio' && S.project.clips.length ? `<button class="btn btn-sm btn-icon" data-act="layer" data-tip="Поверх основного відео (доріжка «Поверх»)">${icon('pip')}</button>` : ''}
               <button class="btn btn-sm btn-icon" data-act="rm" data-tip="Прибрати з проєкту">${icon('trash')}</button>
             </div>
-          </div>
-          <div class="mname">${used.has(m.id) ? '<i class="mused" title="Використовується на таймлайні"></i>' : ''}${esc(m.name)}</div>
+
         </div>`;
       }).join('')}</div>` : all.length ? '<p class="lib-hint">Файлів такого типу ще немає.</p>' : '<p class="lib-hint">Усе обробляється у вашому браузері — нічого не завантажується на сервер.</p>'}`);
   } else if (tab === 'text') {
-    setHtml(body, `<div class="lib-sub first">Готові написи</div><p class="lib-hint tight">Натисніть — напис з’явиться в позиції курсора.</p><div class="presets">${Object.entries(TEXT_PRESETS).map(([k, v]) => `
-      <button class="preset pr-${k}" data-preset="${k}"><span class="pr-demo">${esc(v.o.text.split('\n')[0])}</span><span class="pr-name">${esc(v.label)}</span></button>`).join('')}</div>`);
+    setHtml(body, `${searchBox('Пошук напису')}<p class="lib-hint tight">Натисніть — напис з’явиться в позиції курсора.</p><div class="presets">${Object.entries(TEXT_PRESETS).map(([k, v]) => `
+      <button class="preset pr-${k}" data-preset="${k}" data-q="${esc(v.label)}" data-tip="${esc(v.label)}"><span class="pr-demo">${esc(v.o.text.split('\n')[0])}</span><span class="pr-name">${esc(v.label)}</span></button>`).join('')}</div>`);
   } else if (tab === 'elements') {
     const imgs = [...media.values()].filter(m => m.kind === 'image');
     const vids = [...media.values()].filter(m => m.kind === 'video');
-    const el = (type, ic, name, sub) => `<button class="elem" data-el="${type}" title="${sub}">${icon(ic)}<b>${name}</b></button>`;
-    setHtml(body, `<div class="lib-sub first">Пояснення на кадрі</div><div class="elems">
-      ${el('arrow', 'arrow', 'Стрілка', 'Вказати на кнопку чи деталь')}
-      ${el('rect', 'rect', 'Рамка', 'Обвести важливе')}
-      ${el('spot', 'spot', 'Прожектор', 'Затемнити все, крім області')}
-      ${el('blur', 'blur', 'Розмиття', 'Сховати пароль, пошту, обличчя')}
-      ${el('progress', 'progress', 'Прогрес', 'Смужка внизу — скільки ще лишилось')}
-    </div>
-    <div class="lib-sub">Відео поверх відео</div>
-    ${vids.length ? `<div class="mgrid">${vids.map(m => `<button class="mcard img-pick" data-pip="${m.id}" title="${esc(m.name)}"><div class="mthumb">${m.thumbs[0] ? `<img src="${thumbURL(m)}" alt="">` : icon('video')}<span class="mdur">${fmt(m.duration)}</span></div><div class="mname">${esc(m.name)}</div></button>`).join('')}</div>` : `<p class="lib-hint">Додайте ще одне відео (наприклад, запис з вебкамери) — і його можна буде показати в кружечку в кутку.</p>`}
-    <div class="lib-sub">Емодзі-стікери</div>
-    <div class="emoji-grid">${EMOJIS.map(e => `<button data-emoji="${e}" title="Додати ${e}">${e}</button>`).join('')}</div>
-    <div class="lib-sub">Заставка з назвою</div>
-    <div class="card-grid">${Object.entries(CARD_STYLES).map(([k, [a, b]]) => `<button class="card-pick" data-card="${k}" style="background:linear-gradient(135deg,${a},${b})" title="Додати заставку"><span style="color:${k === 'light' ? '#1a1d23' : '#fff'}">Аа</span></button>`).join('')}</div>
-    <p class="lib-hint" style="margin-top:6px">3 секунди з великим заголовком — на початку відео або в місці курсора.</p>
-    <div class="lib-sub">Зображення поверх відео</div>
-    ${imgs.length ? `<div class="mgrid">${imgs.map(m => `<button class="mcard img-pick" data-img="${m.id}" title="${esc(m.name)}"><div class="mthumb">${m.thumbs[0] ? `<img src="${m.thumbs[0].c.toDataURL()}" alt="">` : icon('image')}</div><div class="mname">${esc(m.name)}</div></button>`).join('')}</div>` : ''}
-    <button class="btn btn-outline btn-block" id="btnAddLogo">${icon('image')} Логотип або картинка…</button>`);
+    const el = (type, ic, name, sub) => `<button class="elem" data-el="${type}" data-q="${name} ${sub}" data-tip="${sub}">${icon(ic)}<b>${name}</b></button>`;
+    const pick = (attr, m, src) => `<button class="mcard img-pick" ${attr}="${m.id}" data-q="${esc(m.name)}" title="${esc(m.name)}"><div class="mthumb">${src ? `<img src="${src}" alt="">` : icon(m.kind === 'image' ? 'image' : 'video')}${m.kind === 'video' ? `<span class="mdur">${fmt(m.duration)}</span>` : ''}</div><div class="mname">${esc(m.name)}</div></button>`;
+    const shapes = [['arrow', 'arrow', 'Стрілка', 'Вказати на кнопку чи деталь'], ['rect', 'rect', 'Рамка', 'Обвести важливе'], ['spot', 'spot', 'Прожектор', 'Затемнити все, крім області'], ['blur', 'blur', 'Розмиття', 'Сховати пароль, пошту, обличчя'], ['progress', 'progress', 'Прогрес', 'Смужка внизу — скільки ще лишилось']];
+    setHtml(body, `${searchBox('Пошук елемента')}
+      ${lfold('shapes', 'Пояснення на кадрі', shapes.length, `<div class="elems">${shapes.map(s => el(...s)).join('')}</div>`)}
+      ${lfold('stickers', 'Емодзі-стікери', EMOJIS.length, `<div class="emoji-grid">${EMOJIS.map(e => `<button data-emoji="${e}" data-q="стікер емодзі" title="Додати ${e}">${e}</button>`).join('')}</div>`)}
+      ${lfold('cards', 'Заставка з назвою', Object.keys(CARD_STYLES).length, `<div class="card-grid">${Object.entries(CARD_STYLES).map(([k, [a, b]]) => `<button class="card-pick" data-card="${k}" data-q="заставка назва" style="background:linear-gradient(135deg,${a},${b})" title="Додати заставку"><span style="color:${k === 'light' ? '#1a1d23' : '#fff'}">Аа</span></button>`).join('')}</div><p class="lib-hint" style="margin-top:6px">3 секунди з великим заголовком — на початку відео або в місці курсора.</p>`)}
+      ${lfold('pip', 'Відео поверх відео', vids.length, vids.length ? `<div class="mgrid">${vids.map(m => pick('data-pip', m, m.thumbs[0] ? thumbURL(m) : '')).join('')}</div>` : '<p class="lib-hint">Додайте ще одне відео (наприклад, запис з вебкамери) — і його можна буде показати в кружечку в кутку.</p>')}
+      ${lfold('imgs', 'Зображення поверх відео', imgs.length, `${imgs.length ? `<div class="mgrid">${imgs.map(m => pick('data-img', m, m.thumbs[0] ? m.thumbs[0].c.toDataURL() : '')).join('')}</div>` : ''}<button class="btn btn-outline btn-block" id="btnAddLogo">${icon('image')} Логотип або картинка…</button>`)}
+      <p class="lib-hint lib-none" hidden>Нічого не знайдено.</p>`);
   } else if (tab === 'captions') renderCapTab(body);
+  applyLibFilter();
+}
+
+// Пошук у вкладках «Текст» і «Елементи»: ховає непотрібні пункти й порожні розділи
+function applyLibFilter() {
+  const body = $('libBody'), q = (libQ[tab] || '').trim().toLowerCase();
+  if (tab !== 'text' && tab !== 'elements') return;
+  let any = false;
+  body.querySelectorAll('[data-q]').forEach(n => { const ok = !q || n.dataset.q.toLowerCase().includes(q); n.hidden = !ok; if (ok) any = true; });
+  body.querySelectorAll('details.lfold').forEach(d => { const vis = d.querySelector('[data-q]:not([hidden])'); d.hidden = !!q && !vis; if (q && vis) d.open = true; });
+  const none = body.querySelector('.lib-none'); if (none) none.hidden = !q || any;
+  if (tab === 'text') { let n = body.querySelector('.lib-none'); if (!n) { n = document.createElement('p'); n.className = 'lib-hint lib-none'; n.textContent = 'Нічого не знайдено.'; body.append(n); } n.hidden = !q || any; }
 }
 
 async function onLibClick(e) {

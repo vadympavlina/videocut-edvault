@@ -869,6 +869,27 @@ await step('перегляд: збільшений кадр тягнеться �
   await p22.close(); assert.deepEqual(errs, []);
 });
 
+await step('ліва панель: пошук у «Тексті» й «Елементах», розділи згортаються й пам\u2019ятають стан, файли списком', async () => {
+  const p23 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  p23.on('pageerror', e => errs.push(e.message));
+  await p23.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p23.goto(`http://localhost:${port}/index.html`); await p23.waitForFunction(() => window.VideoCut);
+  await p23.setInputFiles('#fileInput', video); await p23.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p23.waitForTimeout(900);
+  assert.equal(await p23.locator('.mlist .mrow').count(), 1, 'файл показано рядком');
+  await p23.click('#libTabs [data-tab="text"]');
+  const all = await p23.locator('.preset:visible').count(); assert.ok(all >= 5);
+  await p23.fill('[data-libq]', 'крок'); assert.equal(await p23.locator('.preset:visible').count(), 1, 'пошук лишає один напис');
+  await p23.fill('[data-libq]', 'ззз'); assert.equal(await p23.locator('.preset:visible').count(), 0); assert.ok(await p23.locator('.lib-none:visible').count() >= 1, 'повідомлення «Нічого не знайдено»');
+  await p23.fill('[data-libq]', ''); assert.equal(await p23.locator('.preset:visible').count(), all);
+  await p23.click('#libTabs [data-tab="elements"]');
+  await p23.fill('[data-libq]', 'стрілк'); assert.equal(await p23.locator('.elem:visible').count(), 1); assert.equal(await p23.locator('details.lfold:visible').count(), 1, 'порожні розділи сховано');
+  await p23.fill('[data-libq]', '');
+  await p23.click('details[data-lfold="stickers"] > summary'); assert.equal(await p23.locator('.emoji-grid:visible').count(), 0, 'розділ згорнуто');
+  await p23.click('#libTabs [data-tab="text"]'); await p23.click('#libTabs [data-tab="elements"]');
+  assert.equal(await p23.locator('details[data-lfold="stickers"]').getAttribute('open'), null, 'стан розділу збережено');
+  await p23.close(); assert.deepEqual(errs, []);
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

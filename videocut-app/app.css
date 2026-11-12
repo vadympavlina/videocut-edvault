@@ -1113,3 +1113,61 @@ html.tl-auto .tl{height:min(var(--tl-fit,250px),max(var(--tl-h),min(var(--tl-fit
 /* перетягування збільшеного кадру прямо на перегляді */
 #pv.zoomed{cursor:grab}
 #pv.panning{cursor:grabbing}
+
+/* ── Ліва панель: пошук, список файлів, плитки написів, розділи, що згортаються ── */
+.lib-search{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;margin:0 0 10px;border:1px solid var(--border2);border-radius:8px;background:var(--surface);color:var(--muted)}
+.lib-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-light)}
+.lib-search .ico{width:15px;height:15px;flex:none}
+.lib-search input{flex:1;min-width:0;border:0;background:none;color:var(--text);font:inherit;font-size:13px;outline:0;padding:0}
+.lib-search input::-webkit-search-cancel-button{filter:grayscale(1)}
+.lib-hint.lib-none{text-align:center}
+
+/* Медіа: рядки */
+.mlist{display:flex;flex-direction:column;gap:2px;margin-top:10px}
+.mcard.mrow{display:grid;grid-template-columns:76px minmax(0,1fr) auto;align-items:center;gap:10px;padding:5px;border:1px solid transparent;border-radius:9px;background:none;box-shadow:none;transform:none;overflow:visible;position:relative;cursor:grab;content-visibility:visible}
+.mcard.mrow:hover,.mcard.mrow:focus-within{background:var(--surface2);border-color:var(--border);box-shadow:none;transform:none}
+.mcard.mrow.used .mthumb{box-shadow:0 0 0 1.5px var(--accent-border)}
+.mrow .mthumb{width:76px;aspect-ratio:auto;height:44px;border-radius:6px;overflow:hidden}
+.mrow .mdur{display:none}
+.minfo{min-width:0}
+.mrow .mname{padding:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.msub{font-size:11.5px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msub em{font-style:normal;color:var(--accent)}
+.mrow .mquick{position:static;grid-column:3;grid-row:1;width:26px;height:26px;transform:none;flex:none}
+.mrow .mact{position:static;grid-column:3;grid-row:1;display:flex;gap:3px;opacity:0;margin-right:30px;justify-content:flex-end}
+.mrow:hover .mact,.mrow:focus-within .mact{opacity:1}
+.mrow .mact .btn{background:var(--surface3);color:var(--text);box-shadow:none;border:1px solid var(--border2)}
+.mrow .mproxy{left:2px;right:auto;bottom:2px;top:auto;font-size:9px;padding:0 4px}
+@media (pointer:coarse){.mrow .mact{opacity:1}}
+
+/* Текст: плитки з написом на кадрі */
+.presets{grid-template-columns:1fr 1fr;gap:8px}
+.preset{padding:0;gap:0;border:1px solid var(--border);border-radius:9px;background:var(--surface2);overflow:hidden;box-shadow:none;position:relative;min-width:0}
+.preset:hover,.preset:focus-visible{border-color:var(--accent)}
+.preset .pr-demo{min-height:64px;padding:6px 8px;border-radius:0;font-size:12px}
+.preset.pr-title .pr-demo{font-size:17px}
+.preset.pr-subtitle .pr-demo{font-size:11.5px}
+.preset.pr-lower .pr-demo{font-size:10.5px;padding-left:10px;background-size:74% 20px;background-position:6px center}
+.preset.pr-step .pr-demo{font-size:10.5px;background-size:52px 20px;background-position:6px center}
+.preset.pr-note .pr-demo{font-size:10px;background-size:82% 20px;background-position:right 6px center}
+.preset.pr-plain .pr-demo{font-size:14px;-webkit-text-stroke:2.5px #000}
+.preset .pr-name{position:static;display:block;padding:5px 8px 6px;border-radius:0;background:none;color:var(--text2);font-size:12px;font-weight:600;border-top:1px solid var(--border)}
+.preset::after{content:'+';position:absolute;right:6px;top:6px;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:14px;line-height:20px;text-align:center;opacity:0;transform:scale(.8);transition:opacity .12s,transform .12s}
+.preset:hover::after,.preset:focus-visible::after{opacity:1;transform:none}
+
+/* Елементи: розділи, що згортаються */
+details.lfold{border-top:1px solid var(--border);margin:0 -2px}
+details.lfold:first-of-type{border-top:0}
+details.lfold>summary{display:flex;align-items:center;gap:8px;padding:11px 4px;cursor:pointer;list-style:none;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-radius:6px}
+details.lfold>summary::-webkit-details-marker{display:none}
+details.lfold>summary:hover{color:var(--text)}
+details.lfold>summary i{margin-left:auto;font-style:normal;font-weight:600;letter-spacing:0;font-size:12px}
+details.lfold>summary::after{content:'';width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .15s;flex:none}
+details.lfold[open]>summary::after{transform:rotate(45deg)}
+.lfold-b{padding:0 2px 12px}
+.lfold-b .mgrid{margin-top:0}
+.lfold-b .elem{background:var(--surface2);box-shadow:none}
+.mcard.mrow{grid-template-columns:76px minmax(0,1fr) 28px}
+.mrow .mquick{justify-self:end}
+.mrow .mact{position:absolute;right:40px;top:50%;transform:translateY(-50%);margin:0;grid-column:auto}
+.mrow:hover .minfo,.mrow:focus-within .minfo{padding-right:60px}

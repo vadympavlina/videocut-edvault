@@ -10,7 +10,7 @@ const tmp = mkdtempSync(join(tmpdir(), 'vca-')), vid = join(tmp, 'v.webm');
 execFileSync(process.env.FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=30:duration=6', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=6', '-c:v', 'libvpx', '-b:v', '600k', '-c:a', 'libopus', '-shortest', vid]);
 const server = await startServer(), b = await launch(), errors = [];
 const theme = process.env.THEME || 'dark';
-const ctx = await b.newContext({ viewport: { width: 1440, height: 860 }, bypassCSP: false }); await ctx.addInitScript(t => { try { localStorage.setItem('edvault-theme', t); } catch { /* немає */ } }, theme);
+const ctx = await b.newContext({ viewport: { width: 1440, height: 860 }, bypassCSP: true }); await ctx.addInitScript(t => { try { localStorage.setItem('edvault-theme', t); } catch { /* немає */ } }, theme);
 const p = await newPage(ctx, errors); p.setDefaultTimeout(10000);
 const agg = new Map();
 const scan = async tag => {

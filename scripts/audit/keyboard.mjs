@@ -7,7 +7,7 @@ import { startServer, launch, newPage } from '../../tests/_harness.mjs';
 const tmp = mkdtempSync(join(tmpdir(), 'vck-')), vid = join(tmp, 'v.webm');
 execFileSync(process.env.FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=30:duration=8', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=8', '-c:v', 'libvpx', '-b:v', '600k', '-c:a', 'libopus', '-shortest', vid]);
 const server = await startServer(), b = await launch(), errors = [];
-const ctx = await b.newContext({ viewport: { width: 1440, height: 860 } }); const p = await newPage(ctx, errors); p.setDefaultTimeout(8000);
+const ctx = await b.newContext({ bypassCSP: true, viewport: { width: 1440, height: 860 } }); const p = await newPage(ctx, errors); p.setDefaultTimeout(8000);
 await p.goto(server.url + '/index.html'); await p.waitForFunction(() => window.VideoCut); await p.setInputFiles('#fileInput', vid); await p.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p.waitForTimeout(1200);
 let bad = 0;
 const ring = () => p.evaluate(() => { const e = document.activeElement; if (!e || e === document.body) return null; const s = getComputedStyle(e); const vis = (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || (s.boxShadow && s.boxShadow !== 'none'); return { vis, tag: e.tagName + (e.id ? '#' + e.id : e.className ? '.' + String(e.className).split(' ')[0] : '') }; });

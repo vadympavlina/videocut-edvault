@@ -7,7 +7,7 @@ import { startServer, launch, newPage } from '../../tests/_harness.mjs';
 const tmp = mkdtempSync(join(tmpdir(), 'vcp-')), vid = join(tmp, 'v.webm');
 execFileSync(process.env.FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=30:duration=40', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=40', '-c:v', 'libvpx', '-g', '30', '-b:v', '3M', '-c:a', 'libopus', '-shortest', vid]);
 const server = await startServer(), b = await launch(), errors = [];
-const ctx = await b.newContext({ viewport: { width: 1440, height: 860 } });
+const ctx = await b.newContext({ bypassCSP: true, viewport: { width: 1440, height: 860 } });
 const p = await newPage(ctx, errors); p.setDefaultTimeout(30000);
 await p.addInitScript(() => { window.__lt = []; try { new PerformanceObserver(l => l.getEntries().forEach(e => window.__lt.push(Math.round(e.duration)))).observe({ type: 'longtask', buffered: true }); } catch { /* немає */ } });
 const t0 = Date.now(); await p.goto(server.url + '/index.html'); await p.waitForFunction(() => window.VideoCut); const boot = Date.now() - t0;

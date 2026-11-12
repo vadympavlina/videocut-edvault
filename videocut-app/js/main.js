@@ -1,8 +1,8 @@
 // Точка входу відеоредактора Edvault.
-import { S, selectMany, laneOf, laneLocked, repairProject, outputSize, media, on, emit, commit, undo, redo, canUndo, canRedo, select, duration, layout, newProject, resetHistory, editPoints } from './state.js';
+import { S, findSel, selectMany, laneOf, laneLocked, repairProject, outputSize, media, on, emit, commit, undo, redo, canUndo, canRedo, select, duration, layout, newProject, resetHistory, editPoints } from './state.js';
 import { addMedia, removeMedia, reviveMedia, removedMedia, purgeRemoved } from './media.js';
 import { initPlayer, resizeCanvas, seek, toggle, pause, play, snapshot, requestDraw } from './player.js';
-import { initTimeline, render as renderTimeline, zoomBy, zoomFit, setZoom } from './timeline.js';
+import { setLaneSize, toggleTrack, initTimeline, render as renderTimeline, zoomBy, zoomFit, setZoom } from './timeline.js';
 import { initLibrary, initInspector, importCaptionFile, showTab, showProject } from './panels.js';
 import { initPreviewLayer, renderHandles } from './preview.js';
 import { addMarker, removeMarker, jumpMarker, addToTimeline, addOverlay, splitAt, deleteSel, duplicateSel, copySel, pasteClip, canPaste, cutRange, addCaption, normalizeSel, transitionsAll, addTitleCard, addLayerAt, TEXT_PRESETS, CARD_STYLES } from './ops.js';
@@ -230,6 +230,7 @@ document.addEventListener('keydown', e => {
   }
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
   const mod = e.ctrlKey || e.metaKey;
+  if (!typing && laneHotkey(e)) { e.preventDefault(); return; }
   if (mod && e.code === 'KeyZ') { if (typing) return; e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if (mod && e.code === 'KeyY') { if (typing) return; e.preventDefault(); redo(); return; }
   if (mod && e.code === 'KeyE') { e.preventDefault(); openExport(); return; }
@@ -452,6 +453,20 @@ window.addEventListener('unhandledrejection', e => onErr(e.reason));
 
 initDock();
 initHistoryUi();
+{
+  const sel = $('laneH'); try { sel.value = localStorage.getItem('vc_lanes') || 'm'; } catch { /* немає доступу */ }
+  sel.addEventListener('change', () => setLaneSize(sel.value));
+}
+// Alt+L / M / H / S — заблокувати, вимкнути звук, сховати, соло для доріжки виділеного елемента
+function laneHotkey(e) {
+  const act = { KeyL: 'lock', KeyM: 'mute', KeyH: 'hide', KeyS: 'solo' }[e.code];
+  if (!act || !e.altKey || e.ctrlKey || e.metaKey) return false;
+  const o = findSel(); if (!o || !S.sel) { toast('Спочатку виділіть елемент на доріжці', '', 2500); return true; }
+  const lane = laneOf(S.sel.kind, o), on = toggleTrack(lane, act);
+  const names = { v: 'Відео', v2: 'Відео поверх', a: 'Звук', cc: 'Субтитри', ov: 'Графіка' }, what = { lock: ['заблоковано', 'розблоковано'], mute: ['звук вимкнено', 'звук увімкнено'], hide: ['сховано', 'показано'], solo: ['соло', 'соло знято'] }[act];
+  if (on === null) toast(`Для доріжки «${names[lane]}» цієї дії немає`, '', 2500); else toast(`${names[lane]}: ${on ? what[0] : what[1]}`, '', 2200);
+  return true;
+}
 // Ctrl+A: усі елементи на доріжках, що не заблоковані
 function selectAll() {
   const P = S.project, all = [];

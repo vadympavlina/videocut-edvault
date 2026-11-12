@@ -825,6 +825,30 @@ await step('доріжки: елемент можна перетягнути в 
   await p20.close(); assert.deepEqual(errs, []);
 });
 
+await step('доріжки: висота (низькі/високі) і клавіші Alt+L/M/H/S для доріжки виділеного', async () => {
+  const p21 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  p21.on('pageerror', e => errs.push(e.message));
+  await p21.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p21.goto(`http://localhost:${port}/index.html`); await p21.waitForFunction(() => window.VideoCut);
+  await p21.setInputFiles('#fileInput', video); await p21.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p21.waitForTimeout(900);
+  const h = () => p21.evaluate(() => Math.round(document.querySelector('.tl-lanes .clip').getBoundingClientRect().height));
+  const h0 = await h(); await p21.selectOption('#laneH', 'l'); await p21.waitForTimeout(300);
+  const h1 = await h(); assert.ok(h1 > h0 + 10, `високі доріжки: ${h0} -> ${h1}`);
+  await p21.selectOption('#laneH', 's'); await p21.waitForTimeout(300);
+  const h2 = await h(); assert.ok(h2 < h0, `низькі доріжки: ${h0} -> ${h2}`);
+  await p21.reload(); await p21.waitForFunction(() => window.VideoCut); assert.equal(await p21.inputValue('#laneH'), 's', 'вибір висоти запам\u2019ятано');
+  await p21.setInputFiles('#fileInput', video); await p21.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p21.waitForTimeout(900);
+  await p21.locator('.tl-lanes .clip').first().click();
+  await p21.keyboard.press('Alt+KeyM'); assert.equal(await p21.evaluate(() => !!window.VideoCut.S.project.tracks.v.mute), true, 'Alt+M вимикає звук доріжки');
+  await p21.keyboard.press('Alt+KeyM'); assert.equal(await p21.evaluate(() => !!window.VideoCut.S.project.tracks.v.mute), false);
+  await p21.keyboard.press('Alt+KeyH'); assert.equal(await p21.evaluate(() => !!window.VideoCut.S.project.tracks.v.hide), true, 'Alt+H ховає доріжку');
+  await p21.keyboard.press('Alt+KeyH');
+  await p21.keyboard.press('Alt+KeyL'); assert.equal(await p21.evaluate(() => !!window.VideoCut.S.project.tracks.v.lock), true, 'Alt+L блокує доріжку');
+  await p21.keyboard.press('Alt+KeyL');
+  await p21.selectOption('#laneH', 'm');
+  await p21.close(); assert.deepEqual(errs, []);
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

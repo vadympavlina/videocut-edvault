@@ -144,6 +144,7 @@
       <button class="btn btn-sm btn-cut" id="btnCutRange" data-tip="Вирізати позначений шматок з відео" data-key="X" disabled hidden><span data-icon="scissors"></span><span class="hide-md">Вирізати шматок</span></button>
     </div>
     <div class="tb-r">
+      <label class="pv-zoom hide-sm"><span class="sr-only">Висота доріжок</span><select id="laneH" class="input" data-tip="Висота доріжок"><option value="s">Низькі</option><option value="m">Звичайні</option><option value="l">Високі</option></select></label>
       <button class="btn btn-sm btn-icon on" id="btnSnapToggle" data-tip="Прилипання до країв елементів" data-key="Alt — тимчасово вимкнути"><span data-icon="magnet"></span></button>
       <button class="btn btn-sm btn-icon hide-sm" id="btnZoomOut" data-tip="Віддалити" data-key="−"><span data-icon="zoomOut"></span></button>
       <input type="range" class="hide-sm" id="tlZoom" min="0" max="100" value="50" aria-label="Масштаб таймлайну">
@@ -312,6 +313,7 @@
       <span>Скасувати перетягування</span><span><kbd>Esc</kbd> під час перетягування</span>
       <span>«Стик»: зсунути межу двох кліпів без зміни довжини</span><span><kbd>Shift</kbd> + край кліпа</span>
       <span>Маркер у позиції курсора (повторно — прибрати)</span><span><kbd>M</kbd></span>
+      <span>Заблокувати / вимкнути звук / сховати / соло для доріжки виділеного</span><span><kbd>Alt</kbd> + <kbd>L</kbd> <kbd>M</kbd> <kbd>H</kbd> <kbd>S</kbd></span>
       <span>До попереднього / наступного маркера</span><span><kbd>,</kbd> <kbd>.</kbd></span>
       <span>Скасувати / повторити</span><span><kbd>Ctrl</kbd> <kbd>Z</kbd> · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></span>
       <span>Додати текст / субтитр</span><span><kbd>T</kbd> <kbd>C</kbd></span>

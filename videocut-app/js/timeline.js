@@ -7,7 +7,17 @@ import { addToTimeline, addLayerAt, addMarker, removeMarker, renameMarker } from
 import { seek } from './player.js';
 import { $, esc, icon, clamp, fmt, setHtml, paintRange } from './ui.js';
 
-const ROW = 26, CC_H = 28, V_H = 58, V2_H = 44, A_H = 40, RULER_H = 22, BAR_H = 44;
+const BASE = { ROW: 26, CC_H: 28, V_H: 58, V2_H: 44, A_H: 40 }, RULER_H = 22, BAR_H = 44;
+let ROW = 26, CC_H = 28, V_H = 58, V2_H = 44, A_H = 40;
+// висота доріжок: низькі, звичайні, високі
+const LANE_SCALE = { s: 0.8, m: 1, l: 1.45 };
+export function setLaneSize(k) {
+  const f = LANE_SCALE[k] || 1;
+  ROW = Math.round(BASE.ROW * f); CC_H = Math.round(BASE.CC_H * f); V_H = Math.round(BASE.V_H * f); V2_H = Math.round(BASE.V2_H * f); A_H = Math.round(BASE.A_H * f);
+  document.documentElement.dataset.lanes = k in LANE_SCALE ? k : 'm';
+  try { localStorage.setItem('vc_lanes', k); } catch { /* не страшно */ }
+  if (scroll) render();
+}
 const OV_LABEL = { video: 'Відео поверх', text: 'Текст', rect: 'Рамка', arrow: 'Стрілка', blur: 'Розмиття', spot: 'Прожектор', image: 'Зображення', emoji: 'Емодзі', progress: 'Прогрес' };
 const OV_ICON = { video: 'pip', text: 'text', rect: 'rect', arrow: 'arrow', blur: 'blur', spot: 'spot', image: 'image', emoji: 'smile', progress: 'progress' };
 const TR_NAMES = { fade: 'Розчинення', black: 'Через чорне', slide: 'Зсув', wipe: 'Шторка', zoom: 'Наближення' };
@@ -22,6 +32,7 @@ let ovRowOf = new Map(), dragRows = null; // dragRows: доріжка ('v2' | 'o
 let dragKind = null;
 
 export function initTimeline() {
+  try { setLaneSize(localStorage.getItem('vc_lanes') || 'm'); } catch { setLaneSize('m'); }
   scroll = $('tlScroll'); inner = $('tlInner'); lanes = $('tlLanes'); heads = $('tlHeads');
   ruler = $('tlRuler'); playheadEl = $('tlPlayhead'); rangeEl = $('tlRange'); insertEl = $('tlInsert');
   hoverEl = $('tlHover'); snapEl = $('tlSnap');
@@ -45,15 +56,7 @@ export function initTimeline() {
   scroll.addEventListener('wheel', onWheel, { passive: false });
   inner.addEventListener('pointerdown', onDown);
   // кнопки в заголовках доріжок: сховати, вимкнути звук, соло, заблокувати
-  heads.addEventListener('click', e => {
-    const b = e.target.closest('.th-b'); if (!b) return;
-    const k = b.dataset.lane, a = b.dataset.act, T = (S.project.tracks = S.project.tracks || {});
-    const s = (T[k] = T[k] || {});
-    s[a] = !s[a];
-    if (a === 'solo' && s.solo) for (const o of ['v', 'v2', 'a']) if (o !== k && T[o]) T[o].solo = false;
-    if (a === 'lock' && s.lock) S.multi = S.multi.filter(x => !(x.kind === 'clip' && k === 'v') && !(x.kind === 'music' && k === 'a') && !(x.kind === 'caption' && k === 'cc'));
-    commit(); render(); emit('tracks');
-  });
+  heads.addEventListener('click', e => { const b = e.target.closest('.th-b'); if (b) toggleTrack(b.dataset.lane, b.dataset.act); });
   // Esc під час перетягування скасовує його й нічого більше не робить
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && (drag || band)) { e.stopPropagation(); e.preventDefault(); if (band) { band.el?.remove(); band = null; inner.removeEventListener('pointermove', onBandMove); render(); } else cancelDrag(); } }, true);
   // маркер: подвійний клік — перейменувати
@@ -119,6 +122,19 @@ export function initTimeline() {
   });
   $('tlZoom').addEventListener('input', e => setZoom(zoomFromSlider(+e.target.value)));
   render();
+}
+
+// Керування доріжкою (миша й клавіші): повертає новий стан або null, якщо дії для доріжки немає
+const CAN_ACT = { v: ['hide', 'mute', 'solo', 'lock'], v2: ['hide', 'mute', 'solo', 'lock'], a: ['mute', 'solo', 'lock'], cc: ['hide', 'lock'], ov: ['hide', 'lock'] };
+export function toggleTrack(k, a) {
+  if (!(CAN_ACT[k] || []).includes(a)) return null;
+  const T = (S.project.tracks = S.project.tracks || {}), s = (T[k] = T[k] || {});
+  s[a] = !s[a];
+  if (a === 'solo' && s.solo) for (const o of ['v', 'v2', 'a']) if (o !== k && T[o]) T[o].solo = false;
+  if (a === 'lock' && s.lock) S.multi = S.multi.filter(x => laneOf(x.kind, itemOf(x.kind, x.id)) !== k);
+  if (S.sel && S.multi.length === 0) S.sel = null;
+  commit(); render(); emit('tracks');
+  return s[a];
 }
 
 // ── зум ──
@@ -215,9 +231,9 @@ export function render() {
 
   const ov = graphics.map(o => {
     const label = o.type === 'text' ? (o.text || '').split('\n')[0] : o.type === 'emoji' ? (o.emoji || '') + ' ' + OV_LABEL.emoji : OV_LABEL[o.type];
-    return `<div class="it ov ov-${o.type}${selCls('overlay', o.id)}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + rowOf.get(o.id) * ROW}px">${icon(OV_ICON[o.type] || 'shapes')}<span>${esc(label)}</span>${hnd}</div>`;
+    return `<div class="it ov ov-${o.type}${selCls('overlay', o.id)}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + rowOf.get(o.id) * ROW}px;height:${ROW - 4}px">${icon(OV_ICON[o.type] || 'shapes')}<span>${esc(label)}</span>${hnd}</div>`;
   }).join('');
-  const cc = p.captions.map(c => `<div class="it cc${selCls('caption', c.id)}" data-kind="caption" data-id="${c.id}" style="left:${c.start * pps}px;width:${Math.max(4, c.dur * pps)}px"><span>${esc(c.text)}</span>${hnd}</div>`).join('');
+  const cc = p.captions.map(c => `<div class="it cc${selCls('caption', c.id)}" data-kind="caption" data-id="${c.id}" style="left:${c.start * pps}px;width:${Math.max(4, c.dur * pps)}px;height:${CC_H - 4}px"><span>${esc(c.text)}</span>${hnd}</div>`).join('');
   const clips = layout().map((l, idx) => {
     const c = l.clip, m = media.get(c.mediaId);
     const badges = [];
@@ -228,13 +244,13 @@ export function render() {
     const fi = c.fadeIn ? `<b class="fade fi" style="width:${Math.min(c.fadeIn * pps, (l.end - l.start) * pps / 2)}px"></b>` : '';
     const fo = c.fadeOut ? `<b class="fade fo" style="width:${Math.min(c.fadeOut * pps, (l.end - l.start) * pps / 2)}px"></b>` : '';
     const trm = c.tr && idx > 0 ? `<b class="tr-zone" style="width:${Math.min((c.tr.d || 0.6) * pps, (l.end - l.start) * pps)}px" title="Перехід: ${TR_NAMES[c.tr.type] || ''}"></b>` : '';
-    return `<div class="it clip${selCls('clip', c.id)}${m ? '' : ' missing'}" data-kind="clip" data-id="${c.id}" style="left:${l.start * pps}px;width:${Math.max(4, (l.end - l.start) * pps)}px">${fi}${fo}${trm}<span class="lbl">${esc(m ? m.name : 'Файл відсутній')}${badges.length ? ' · ' + badges.join(' · ') : ''}</span>${hnd}</div>`;
+    return `<div class="it clip${selCls('clip', c.id)}${m ? '' : ' missing'}" data-kind="clip" data-id="${c.id}" style="left:${l.start * pps}px;width:${Math.max(4, (l.end - l.start) * pps)}px;height:${V_H - 6}px">${fi}${fo}${trm}<span class="lbl">${esc(m ? m.name : 'Файл відсутній')}${badges.length ? ' · ' + badges.join(' · ') : ''}</span>${hnd}</div>`;
   }).join('');
   const mr = assignRows(p.music.map(x => ({ id: x.id, start: x.start, dur: musicDur(x), row: x.row })));
   muRows = mr.n + (dragRows === 'a' ? 1 : 0); muRowOf = mr.rowOf;
   const mu = p.music.map(x => {
     const m = media.get(x.mediaId);
-    return `<div class="it mu${x.voice ? ' voice' : ''}${selCls('music', x.id)}" data-kind="music" data-id="${x.id}" style="left:${x.start * pps}px;width:${Math.max(4, musicDur(x) * pps)}px;top:${4 + (muRowOf.get(x.id) || 0) * A_H}px"><span class="lbl">${icon(x.voice ? 'mic' : 'music')}${esc(x.voice ? 'Голос' : m ? m.name : 'Файл відсутній')}</span>${hnd}</div>`;
+    return `<div class="it mu${x.voice ? ' voice' : ''}${selCls('music', x.id)}" data-kind="music" data-id="${x.id}" style="left:${x.start * pps}px;width:${Math.max(4, musicDur(x) * pps)}px;height:${A_H - 6}px;top:${4 + (muRowOf.get(x.id) || 0) * A_H}px"><span class="lbl">${icon(x.voice ? 'mic' : 'music')}${esc(x.voice ? 'Голос' : m ? m.name : 'Файл відсутній')}</span>${hnd}</div>`;
   }).join('');
   const sil = (S.silPreview || []).map(([a, b]) => `<div class="sil" style="left:${a * pps}px;width:${Math.max(2, (b - a) * pps)}px"></div>`).join('');
 

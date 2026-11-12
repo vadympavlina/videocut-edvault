@@ -4,3 +4,5 @@
   IBM Plex Sans   — інтерфейс редактора         · SIL Open Font License 1.1
   JetBrains Mono  — код                         · SIL Open Font License 1.1
 Ліцензія OFL дозволяє вільно використовувати й поширювати шрифти разом із сайтом.
+
+Для тексту на відео й субтитрів: Inter, Montserrat, Rubik, Oswald, Roboto Slab, Comfortaa, Caveat · SIL Open Font License 1.1

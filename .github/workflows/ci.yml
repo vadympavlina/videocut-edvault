@@ -1,0 +1,26 @@
+name: Перевірки
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Список модулів для попереднього завантаження актуальний
+        run: npm run audit:build
+      - name: Модульні тести
+        run: npm test
+      - name: Браузерні тести
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - name: Аудити (доступність, швидкість)
+        run: npm run audit:a11y && npm run audit:perf

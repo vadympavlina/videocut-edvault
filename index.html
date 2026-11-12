@@ -2,61 +2,52 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob: data: https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Відеоредактор · Edvault</title>
 <meta name="theme-color" content="#1c2869">
 <link rel="icon" href="icons/videocut.ico" sizes="32x32">
 <link rel="icon" href="icons/videocut.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/videocut-180.png">
-<script>
-  (function () {
-    try {
-      var t = localStorage.getItem('edvault-theme') || 'auto';
-      var dark = t === 'dark' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
-      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
-    // старий редактор реєстрував service worker для FFmpeg — він більше не потрібен
-    if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(function (rs) {
-      rs.forEach(function (r) { var w = r.active || r.waiting || r.installing; if (w && /coi-serviceworker/.test(w.scriptURL)) r.unregister(); });
-    }).catch(function () {});
-  })();
-</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<script src="videocut-app/theme.js"></script>
 <!-- шрифти інтерфейсу лежать поруч; Inter лишається для тексту на самому відео -->
 <link rel="stylesheet" href="fonts/fonts.css">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<!-- шрифти для субтитрів потрібні не одразу — вантажимо їх у фоні, щоб не гальмувати перший показ -->
-<link rel="stylesheet" media="print" id="ccFontsCss" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;900&family=Rubik:wght@500;800&family=Oswald:wght@500;700&family=Roboto+Slab:wght@500;800&family=Comfortaa:wght@600;700&family=Caveat:wght@600;700&display=swap">
-<script>
-  (function () {
-    var l = document.getElementById('ccFontsCss');
-    function done() { l.media = 'all'; window.__ccFontsReady = true; window.dispatchEvent(new Event('cc-fonts-css')); }
-    if (l.sheet) done(); else { l.addEventListener('load', done); l.addEventListener('error', function () { window.__ccFontsReady = true; window.dispatchEvent(new Event('cc-fonts-css')); }); }
-  })();
-</script>
 <meta name="color-scheme" content="light dark">
 <link rel="stylesheet" href="videocut-app/app.css">
-<link rel="modulepreload" href="videocut-app/js/main.js">
-<link rel="modulepreload" href="videocut-app/js/state.js">
-<link rel="modulepreload" href="videocut-app/js/cc.js">
-<link rel="modulepreload" href="videocut-app/js/layer.js">
-<link rel="modulepreload" href="videocut-app/js/cc-panel.js">
-<link rel="modulepreload" href="videocut-app/js/ui.js">
-<link rel="modulepreload" href="videocut-app/js/media.js">
-<link rel="modulepreload" href="videocut-app/js/player.js">
-<link rel="modulepreload" href="videocut-app/js/render.js">
-<link rel="modulepreload" href="videocut-app/js/timeline.js">
-<link rel="modulepreload" href="videocut-app/js/panels.js">
-<link rel="modulepreload" href="videocut-app/js/preview.js">
-<link rel="modulepreload" href="videocut-app/js/ops.js">
-<link rel="modulepreload" href="videocut-app/js/export.js">
-<link rel="modulepreload" href="videocut-app/js/audio.js">
-<link rel="modulepreload" href="videocut-app/js/duck.js">
-<link rel="modulepreload" href="videocut-app/js/db.js">
-<link rel="modulepreload" href="videocut-app/js/srt.js">
+<!-- preload -->
+<link rel="modulepreload" href="videocut-app/js/a11y.js">
 <link rel="modulepreload" href="videocut-app/js/asr.js">
+<link rel="modulepreload" href="videocut-app/js/audio.js">
+<link rel="modulepreload" href="videocut-app/js/cc-panel.js">
+<link rel="modulepreload" href="videocut-app/js/cc.js">
+<link rel="modulepreload" href="videocut-app/js/chroma.js">
+<link rel="modulepreload" href="videocut-app/js/convert.js">
+<link rel="modulepreload" href="videocut-app/js/ctxmenu.js">
+<link rel="modulepreload" href="videocut-app/js/db.js">
+<link rel="modulepreload" href="videocut-app/js/dock.js">
+<link rel="modulepreload" href="videocut-app/js/duck.js">
+<link rel="modulepreload" href="videocut-app/js/export-ui.js">
+<link rel="modulepreload" href="videocut-app/js/export.js">
+<link rel="modulepreload" href="videocut-app/js/layer.js">
+<link rel="modulepreload" href="videocut-app/js/main.js">
+<link rel="modulepreload" href="videocut-app/js/media.js">
+<link rel="modulepreload" href="videocut-app/js/menu.js">
+<link rel="modulepreload" href="videocut-app/js/ops.js">
+<link rel="modulepreload" href="videocut-app/js/panels.js">
+<link rel="modulepreload" href="videocut-app/js/player.js">
+<link rel="modulepreload" href="videocut-app/js/preview.js">
+<link rel="modulepreload" href="videocut-app/js/projfile.js">
+<link rel="modulepreload" href="videocut-app/js/proxy.js">
+<link rel="modulepreload" href="videocut-app/js/render.js">
+<link rel="modulepreload" href="videocut-app/js/silences.js">
+<link rel="modulepreload" href="videocut-app/js/srt.js">
+<link rel="modulepreload" href="videocut-app/js/state.js">
+<link rel="modulepreload" href="videocut-app/js/stretch.js">
+<link rel="modulepreload" href="videocut-app/js/timeline.js">
+<link rel="modulepreload" href="videocut-app/js/ui.js">
+<link rel="modulepreload" href="videocut-app/js/voice.js">
 <link rel="modulepreload" href="videocut-app/vendor/mediabunny.min.mjs">
+<!-- /preload -->
 <meta name="description" content="Монтаж у браузері: різання, текст, субтитри, музика, зелений екран і накладання футажів. Експорт у MP4.">
 <!-- og -->
 <meta property="og:type" content="website">
@@ -76,6 +67,7 @@
 <body>
 
 <header class="topbar">
+  <h1 class="sr-only">Videocut: відеоредактор</h1>
   <img class="vc-logo" src="icons/videocut.svg" alt="">
   <nav class="menubar" id="menubar" aria-label="Меню"></nav>
   <div class="grow"></div>
@@ -89,14 +81,14 @@
 </header>
 
 <div class="work">
-  <aside class="lib">
-    <nav class="lib-tabs" id="libTabs">
+  <aside class="lib" aria-label="Бібліотека">
+    <div class="lib-tabs" id="libTabs" role="tablist" aria-label="Розділи бібліотеки">
       <button data-tab="media" role="tab"><span data-icon="media"></span>Медіа<i class="tab-n" hidden></i></button>
       <button data-tab="text" role="tab"><span data-icon="text"></span>Текст<i class="tab-n" hidden></i></button>
       <button data-tab="elements" role="tab"><span data-icon="shapes"></span>Елементи<i class="tab-n" hidden></i></button>
       <button data-tab="captions" role="tab"><span data-icon="cc"></span>Субтитри<i class="tab-n" hidden></i></button>
-    </nav>
-    <div class="lib-body" id="libBody"></div>
+    </div>
+    <div class="lib-body" id="libBody" role="tabpanel" tabindex="-1"></div>
   </aside>
 
   <main class="center">
@@ -118,20 +110,7 @@
         </ol>
       </div>
     </div>
-  </main>
-
-  <aside class="insp" id="inspector"></aside>
-</div>
-
-<div class="splitter" id="splitter" title="Потягніть, щоб змінити висоту таймлайну"></div>
-
-<section class="tl" id="tl">
-  <div class="tl-bar">
-    <div class="tb-l">
-      <button class="btn btn-sm btn-icon" id="btnSplit" data-tip="Розрізати в позиції курсора" data-key="S"><span data-icon="split"></span></button>
-      <button class="btn btn-sm btn-icon" id="btnDelete" data-tip="Видалити виділене" data-key="Delete"><span data-icon="trash"></span></button>
-      <button class="btn btn-sm btn-cut" id="btnCutRange" data-tip="Вирізати позначений шматок з відео" data-key="X" disabled hidden><span data-icon="scissors"></span><span class="hide-md">Вирізати шматок</span></button>
-    </div>
+  <div class="pv-bar">
     <div class="tb-c">
       <button class="btn btn-icon btn-sm hide-sm" id="btnStart" data-tip="На початок" data-key="Home"><span data-icon="prev"></span></button>
       <button class="btn btn-icon btn-sm" id="btnFrameBack" data-tip="Кадр назад" data-key="←"><span data-icon="stepBack"></span></button>
@@ -139,6 +118,23 @@
       <button class="btn btn-icon btn-sm" id="btnFrameFwd" data-tip="Кадр уперед" data-key="→"><span data-icon="stepFwd"></span></button>
       <button class="btn btn-icon btn-sm hide-sm" id="btnEnd" data-tip="У кінець" data-key="End"><span data-icon="next"></span></button>
       <span class="tr-time"><b id="trTime">00:00.0</b><span> / </span><span id="trDur">00:00.0</span></span>
+    </div>
+  </div>
+  </main>
+
+  <aside class="insp" id="inspector" aria-label="Властивості"></aside>
+  <div class="vsplit" id="vsLib" aria-hidden="true" data-aria-valuenow="300"></div>
+  <div class="vsplit" id="vsInsp" aria-hidden="true"></div>
+</div>
+
+<div class="splitter" id="splitter" title="Потягніть, щоб змінити висоту таймлайну"></div>
+
+<section class="tl" id="tl" aria-label="Монтажний стіл">
+  <div class="tl-bar">
+    <div class="tb-l">
+      <button class="btn btn-sm btn-icon" id="btnSplit" data-tip="Розрізати в позиції курсора" data-key="S"><span data-icon="split"></span></button>
+      <button class="btn btn-sm btn-icon" id="btnDelete" data-tip="Видалити виділене" data-key="Delete"><span data-icon="trash"></span></button>
+      <button class="btn btn-sm btn-cut" id="btnCutRange" data-tip="Вирізати позначений шматок з відео" data-key="X" disabled hidden><span data-icon="scissors"></span><span class="hide-md">Вирізати шматок</span></button>
     </div>
     <div class="tb-r">
       <button class="btn btn-sm btn-icon on" id="btnSnapToggle" data-tip="Прилипання до країв елементів" data-key="Alt — тимчасово вимкнути"><span data-icon="magnet"></span></button>
@@ -163,6 +159,8 @@
     </div>
   </div>
 </section>
+
+<footer class="statusbar" id="statusBar" aria-label="Рядок стану"><span id="sbFmt"></span><span id="sbClips"></span><span class="grow"></span><span id="sbSnap"></span></footer>
 
 <!-- Експорт -->
 <div class="overlay" id="exportModal">

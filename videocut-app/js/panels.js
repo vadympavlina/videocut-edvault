@@ -75,7 +75,7 @@ function updateTabCounts() {
 }
 function renderLibrary() { keepFocus($('libBody'), drawLibrary); }
 function drawLibrary() {
-  $('libTabs').querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  $('libTabs').querySelectorAll('[data-tab]').forEach(b => { b.classList.toggle('on', b.dataset.tab === tab); b.setAttribute('aria-selected', String(b.dataset.tab === tab)); });
   const body = $('libBody');
   updateTabCounts();
   if (tab === 'media') {
@@ -262,9 +262,8 @@ function drawInspector() {
   const el = box();
   const o = findSel(), s = S.sel;
   if (o) projOpen = false;
-  document.body.classList.toggle('insp-off', !o && !projOpen);
   let html = '';
-  if (!o) html = projOpen ? projectPanel() : '';
+  if (!o) html = projectPanel();
   else if (s.kind === 'clip') html = clipPanel(o);
   else if (s.kind === 'overlay') html = overlayPanel(o);
   else if (s.kind === 'caption') html = captionPanel(o);
@@ -278,14 +277,14 @@ function head(ic, title, sub) {
 }
 
 // Розділ панелі: заголовок з іконкою і група пов'язаних налаштувань
-const sec = (title, ic, html, aux = '') => `<section class="isec"><h4 class="isec-h">${icon(ic)}<span>${title}</span>${aux ? `<em>${aux}</em>` : ''}</h4>${html}</section>`;
+const sec = (title, ic, html, aux = '') => `<section class="isec"><h2 class="isec-h">${icon(ic)}<span>${title}</span>${aux ? `<em>${aux}</em>` : ''}</h2>${html}</section>`;
 
 // ── Проєкт: назва, формат, тонкі налаштування ──
 function projectPanel() {
   const p = S.project;
   const FORMATS = [['16:9', 'YouTube, урок', 'r169'], ['9:16', 'Reels, Shorts', 'r916'], ['1:1', 'Квадрат', 'r11'], ['4:3', 'Класичний', 'r43']];
   return `<div class="insp-head"><span class="insp-ico">${icon('film')}</span><div><b>Проєкт</b><small>${p.clips.length ? fmtShort(duration()) : 'Порожній'}</small></div>
-    <button class="btn btn-icon btn-sm" data-a="closeProject" data-tip="Закрити (Esc)">${icon('x')}</button></div>
+    </div>
     <div class="field"><label>Назва</label><input class="input" data-pf="name" value="${esc(p.name)}" maxlength="80"></div>
     <div class="field"><label>Форма кадру</label><div class="fmt-cards">${FORMATS.map(([v, n, cls]) => `<button class="fmt-card${p.aspect === v ? ' on' : ''}" data-set="p:aspect" data-v="${v}" title="${n}"><i class="fmt-shape ${cls}"></i><b>${v}</b></button>`).join('')}</div></div>
     ${seg('p:fps', 'Кадрів за секунду', [[24, '24'], [25, '25'], [30, '30'], [60, '60']], p.fps, '30 — стандарт. 60 — для плавних рухів мишею чи ігор.')}

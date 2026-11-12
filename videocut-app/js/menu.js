@@ -5,7 +5,6 @@ import { icon, esc } from './ui.js';
 export function initMenu(root, menus) {
   root.innerHTML = `<button type="button" class="mb-btn mb-burger" data-m="all" aria-haspopup="true" aria-label="Меню">${icon('menu')}<span>Меню</span></button>` +
     menus.map((m, i) => `<button type="button" class="mb-btn mb-top" data-m="${i}" aria-haspopup="true">${esc(m.label)}</button>`).join('');
-  root.setAttribute('role', 'menubar');
   let openIdx = null, dd = null, sub = null;
 
   const isOn = it => !it.enabled || it.enabled();

@@ -70,6 +70,8 @@ const wantTime = new WeakMap(), seekHooked = new WeakSet(), lastTarget = new Wea
 function seekEl(v, t) {
   if (!seekHooked.has(v)) {
     seekHooked.add(v);
+    // страховка при навантаженні: коли відео «дозріло» після пошуку, а кадр не перемальовано, перемальовуємо
+    v.addEventListener('canplay', () => { if (!S.playing) requestDraw(); });
     v.addEventListener('seeked', () => {
       if (S.playing) { wantTime.delete(v); return; }
       draw(); // спершу завжди малюємо щойно знайдений кадр (навіть якщо курсор уже пішов далі), інакше при водінні картинка стоїть

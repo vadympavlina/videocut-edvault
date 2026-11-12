@@ -5,6 +5,16 @@
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node --test tests/*.test.mjs",
-    "test:e2e": "node tests/videocut-e2e.mjs"
-  }
+    "test:e2e": "node tests/videocut-e2e.mjs",
+    "build": "node scripts/preload.mjs",
+    "audit": "npm run audit:build && npm run audit:a11y && npm run audit:perf",
+    "audit:build": "node scripts/preload.mjs --check",
+    "audit:a11y": "node scripts/audit/a11y.mjs",
+    "audit:perf": "node scripts/audit/perf.mjs"
+  },
+  "devDependencies": {
+    "axe-core": "^4.14.0",
+    "playwright": "^1.49.1"
+  },
+  "type": "module"
 }

@@ -19,7 +19,7 @@
   color-scheme:dark;
   --bg:#1e1e1e;--surface:#2c2c2c;--surface2:#383838;--surface3:#424242;
   --border:#3a3a3a;--border2:#4a4a4a;
-  --text:#ededed;--text2:#c2c2c2;--muted:#9a9a9a;
+  --text:#ededed;--text2:#c2c2c2;--muted:#a8a8a8;
   --accent:#9aabff;--accent-hover:#b3c0ff;--accent-light:rgba(154,171,255,.14);--accent-border:rgba(154,171,255,.38);--on-accent:#10153a;
   --danger:#f08a82;--danger-light:rgba(240,138,130,.12);--success:#5fd39b;
   --shadow-sm:0 1px 2px rgba(0,0,0,.4);--shadow-md:0 8px 22px rgba(0,0,0,.45);--shadow-lg:0 24px 60px rgba(0,0,0,.6);
@@ -346,8 +346,8 @@ details.more summary:hover{color:var(--text)}
 .drop-hint div{display:flex;align-items:center;gap:10px;padding:14px 20px;border-radius:14px;background:var(--surface);box-shadow:var(--shadow-lg);font-size:15px;font-weight:600;color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:24px;z-index:600;transform:translate(-50%,12px);opacity:0;pointer-events:none;padding:10px 16px;border-radius:12px;background:var(--float-bg);color:var(--float-text);font-size:13px;font-weight:500;box-shadow:0 12px 32px rgba(0,0,0,.28);transition:opacity .18s,transform .18s;max-width:calc(100vw - 24px)}
 .toast.show{opacity:1;transform:translate(-50%,0)}
-.toast.ok{background:#0f8a62;color:#fff}
-.toast.err{background:#c73b3b;color:#fff}
+.toast.ok{background:#0b7553;color:#fff}
+.toast.err{background:#b42f2f;color:#fff}
 #tip{position:fixed;z-index:700;pointer-events:none;padding:6px 9px;border-radius:7px;background:var(--float-bg);color:#fff;font-size:12px;font-weight:500;box-shadow:0 6px 18px rgba(0,0,0,.25);opacity:0;transition:opacity .1s;max-width:260px}
 #tip.show{opacity:1}
 #tip .k{opacity:.6;margin-left:6px}
@@ -564,8 +564,8 @@ body.recording .tl,body.recording .lib,body.recording .insp,body.recording .topb
 .tb-l,.tb-c,.tb-r{display:flex;align-items:center;gap:2px;min-width:0}
 .tb-r{justify-content:flex-end}
 .tb-c .tr-time{margin-left:8px;font-size:12px;min-width:118px}
-.tl-bar .btn-play{width:32px;height:32px;margin:0 3px;box-shadow:none}
-.tl-bar .btn-play .ico{width:15px;height:15px}
+.btn-play{width:32px;height:32px;margin:0 3px;box-shadow:none}
+.btn-play .ico{width:15px;height:15px}
 .tl-bar input[type=range]{width:90px}
 .tl-heads{width:94px}
 .head{gap:6px;padding:0 9px;font-size:11px}
@@ -831,7 +831,7 @@ details.more summary{padding:8px 4px;color:var(--text2);width:auto}
 .ctx-sep{height:1px;margin:5px 6px;background:var(--border)}
 
 /* ліва панель: дрібні правки */
-.pr-name{position:static;padding:5px 2px 1px;border-radius:0;background:none;color:var(--muted);font-size:11.5px;font-weight:600}
+.pr-name{position:static;padding:5px 2px 1px;border-radius:0;background:none;color:var(--text2);font-size:11.5px;font-weight:600}
 .cap textarea{resize:none}
 
 /* ══════════ Спокійніший інтерфейс: менше рамок, тіней і дрібних плиток ══════════ */
@@ -884,70 +884,87 @@ details.more summary{padding:12px 0;border-top:1px solid var(--border);width:aut
 .isec-h .ico{display:none}
 .chip:not(.on) .ico{display:none}
 
-/* ════════════ «Острівці»: верхня панель, бібліотека, властивості й таймлайн — окремі картки навколо кадру ════════════ */
-body{padding:10px;font-family:'IBM Plex Sans','Commissioner',system-ui,sans-serif}
+/* ════════════ Робочий стіл: панелі впритул, тонкі розділювачі, без карток і тіней ════════════ */
+:root{--lib-w:300px;--insp-w:300px;--bar-bg:var(--surface2);--line:var(--border)}
+:root[data-theme="dark"]{--stage-bg:#141414;--tl-bg:#202020;--bar-bg:#252525}
+:root:not([data-theme="dark"]){--stage-bg:#cfd5dc;--bar-bg:#eef1f4}
+body{padding:0;font-family:'IBM Plex Sans','Commissioner',system-ui,sans-serif}
 kbd{font-family:'IBM Plex Sans',sans-serif}
-.topbar{height:52px;margin-bottom:10px;padding:0 8px 0 10px;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--isl-shadow)}
-.topbar .btn-primary.btn-sm{height:34px;padding:0 14px;font-size:13.5px}
-.mb-btn{height:32px;font-size:13.5px}
-.proj{height:34px}
-.proj .brand-proj{font-size:13.5px}
-.vc-logo{width:30px;height:30px;border-radius:8px;display:block;flex-shrink:0;margin-right:2px}
-.btn-primary{box-shadow:none}
-.btn-primary:hover:not(:disabled),.btn-primary:active:not(:disabled){box-shadow:none}
-.work{gap:10px;background:transparent}
-@media(min-width:981px){
-  .work{grid-template-columns:340px minmax(0,1fr) 300px}
-  body.insp-off .work{grid-template-columns:340px minmax(0,1fr)}
-  body.hide-lib .work{grid-template-columns:68px minmax(0,1fr) 300px}
-  body.hide-lib.insp-off .work{grid-template-columns:68px minmax(0,1fr)}
-  /* без бібліотеки лишається смуга розділів, щоб відкрити її знову */
-  body.hide-lib .lib{display:grid;grid-template-columns:68px}
-  body.hide-lib .lib-body{display:none}
-  .lib{background:transparent;border:0;display:grid;grid-template-columns:68px minmax(0,1fr);gap:10px;align-items:start;min-height:0}
-  .lib-tabs{grid-template-columns:1fr;padding:6px;gap:2px;align-self:start}
-  .lib-tabs button{padding:8px 0 7px;gap:4px;font-size:11px;border-radius:10px}
-  .lib-tabs .ico{width:19px;height:19px}
-  .lib-body{align-self:start;max-height:100%;padding:14px}
-  .insp{align-self:start;max-height:100%}
-}
-@media(min-width:981px) and (max-width:1280px){
-  .work{grid-template-columns:300px minmax(0,1fr) 272px}
-  body.insp-off .work{grid-template-columns:300px minmax(0,1fr)}
-  body.hide-lib .work{grid-template-columns:68px minmax(0,1fr) 272px}
-}
-.lib-tabs,.lib-body,.insp,.tl{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--isl-shadow)}
-.lib-tabs{border-bottom:1px solid var(--border)}
-.insp{border-left:1px solid var(--border)}
-.insp-head{border-radius:14px 14px 0 0}
-.lib-tabs button.on{font-weight:600}
-.stage{background:transparent}
-.stage-empty{background:var(--bg);overflow-y:auto}
-#pv{border-radius:6px;box-shadow:0 18px 44px -16px rgba(0,0,0,.45),0 0 0 1px rgba(0,0,0,.06)}
+.btn-primary,.btn-primary:hover:not(:disabled),.btn-primary:active:not(:disabled){box-shadow:none}
 .stage-empty h2,.modal-head h3{font-family:'Literata',Georgia,serif;font-weight:600;letter-spacing:0}
-.splitter{height:10px;background:transparent;border:0}
-.splitter::after{top:3px}
-.tl{overflow:hidden}
-.tl-bar{border-bottom:1px solid var(--border);background:var(--surface)}
-.tl-heads,.tl-heads .head:first-child,.tl-ruler-wrap{background:var(--surface)}
-.btn-play{box-shadow:none}
 .overlay{background:var(--overlay)}
 .modal{border:1px solid var(--border)}
+
+/* верхня смуга: меню, назва проєкту, дії; висота як у настільних програм */
+.topbar{height:40px;margin:0;padding:0 8px;gap:4px;background:var(--bar-bg);border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none}
+.topbar .btn-primary.btn-sm{height:28px;padding:0 14px;font-size:13px;border-radius:5px}
+.mb-btn{height:28px;font-size:13px;border-radius:5px}
+.proj{height:28px}
+.proj .brand-proj{font-size:13px}
+.vc-logo{width:22px;height:22px;border-radius:5px;margin:0 6px 0 2px}
+.btn{border-radius:5px}
+
+/* три панелі й перегляд: суцільна сітка, розмір панелей міняється розділювачами */
+.work{position:relative;gap:0;background:var(--stage-bg);grid-template-columns:var(--lib-w) minmax(0,1fr) var(--insp-w)}
+body.insp-off .work{grid-template-columns:var(--lib-w) minmax(0,1fr)}
+.lib,.insp{background:var(--surface);border:0;border-radius:0;box-shadow:none;min-height:0}
+.lib{border-right:1px solid var(--border);display:flex;flex-direction:column}
+.insp{border-left:1px solid var(--border);align-self:stretch;max-height:none;overflow-y:auto}
+.lib-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:0;padding:0;border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;background:var(--bar-bg);align-self:auto}
+.lib-tabs button{flex-direction:row;justify-content:center;gap:6px;height:36px;padding:0 4px;border-radius:0;font-size:12.5px;border-bottom:2px solid transparent;margin-bottom:-1px;position:relative}
+.lib-tabs button .tab-n{position:static}
+.lib-tabs button.on{background:transparent;color:var(--text);font-weight:600;border-bottom-color:var(--accent)}
+.lib-tabs .ico{width:16px;height:16px}
+.lib{container-type:inline-size}
+@container (max-width:340px){.lib-tabs .ico{display:none}.lib-tabs button{font-size:12px}}
+.lib-body{flex:1;min-height:0;max-height:none;align-self:auto;border:0;border-radius:0;box-shadow:none;background:var(--surface);padding:12px}
+body.hide-lib .work{grid-template-columns:0 minmax(0,1fr) var(--insp-w)}
+body.hide-lib.insp-off .work{grid-template-columns:0 minmax(0,1fr)}
+body.hide-lib .lib{display:none}
+.insp-head{border-radius:0}
+.center{background:var(--stage-bg)}
+.stage{background:var(--stage-bg)}
+.stage-empty{background:var(--stage-bg);overflow-y:auto}
+#pv{border-radius:0;box-shadow:none}
+
+/* розділювачі: тонка лінія, при наведенні підсвічується */
+.vsplit{position:absolute;top:0;bottom:0;width:7px;margin-left:-3px;cursor:col-resize;z-index:12;touch-action:none}
+.vsplit::after{content:'';position:absolute;top:0;bottom:0;left:3px;width:1px;background:transparent;transition:background .12s}
+.vsplit:hover::after,.vsplit.active::after{background:var(--accent);width:2px;left:2px}
+#vsLib{left:var(--lib-w)}
+#vsInsp{right:var(--insp-w);margin-left:0;margin-right:-3px}
+body.hide-lib #vsLib,body.insp-off #vsInsp{display:none}
+.splitter{height:5px;margin:0;background:var(--border);border:0;flex-shrink:0}
+.splitter::after{top:1px;width:48px;margin-left:-24px;height:3px;background:var(--border2)}
+.splitter:hover,.splitter.active{background:var(--accent)}
+.splitter:hover::after,.splitter.active::after{background:var(--on-accent)}
+
+/* керування відтворенням під переглядом */
+.pv-bar{flex-shrink:0;display:flex;align-items:center;justify-content:center;height:40px;background:var(--bar-bg);border-top:1px solid var(--border)}
+.pv-bar .tb-c{display:flex;align-items:center;gap:4px}
+.tl-bar{grid-template-columns:1fr auto;display:grid}
+.statusbar{flex-shrink:0;height:22px;display:flex;align-items:center;gap:18px;padding:0 12px;background:var(--bar-bg);border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.statusbar .grow{flex:1}
+
+/* таймлайн на всю ширину під усім */
+.tl{background:var(--tl-bg);border:0;border-radius:0;box-shadow:none;overflow:hidden}
+.tl-bar{height:38px;background:var(--bar-bg);border-bottom:1px solid var(--border)}
+.tl-heads,.tl-heads .head:first-child,.tl-ruler-wrap{background:var(--bar-bg)}
+.btn-play{box-shadow:none}
+
+@media(min-width:981px) and (max-width:1280px){:root{--lib-w:260px;--insp-w:260px}}
 @media(max-width:980px){
+  .work{grid-template-columns:minmax(0,1fr)!important}
+  .vsplit{display:none}
   .insp{display:none}
   body.show-insp .insp{display:flex}
-  body.show-lib .lib,body.show-insp .insp{top:72px;bottom:10px;border-radius:14px;border:1px solid var(--border)}
-  body.show-lib .lib{left:10px;flex-direction:column;background:var(--surface)}
-  body.show-lib .lib .lib-tabs,body.show-lib .lib .lib-body{border:0;box-shadow:none;border-radius:0}
-  body.show-lib .lib .lib-tabs{border-bottom:1px solid var(--border);border-radius:14px 14px 0 0}
-  body.show-insp .insp{right:10px}
+  body.show-lib .lib,body.show-insp .insp{top:40px;bottom:0;border:0;border-radius:0}
+  body.show-lib .lib{left:0;width:min(340px,92vw);border-right:1px solid var(--border);box-shadow:var(--shadow-lg)}
+  body.show-insp .insp{right:0;width:min(340px,92vw);box-shadow:var(--shadow-lg)}
 }
 @media(max-width:640px){
-  body{padding:6px}
-  .topbar{margin-bottom:6px;height:48px}
-  .splitter{height:8px}
-  body.show-lib .lib,body.show-insp .insp{top:60px;bottom:6px;left:6px;right:6px;width:auto}
-  /* властивості — нижня шторка, кадр над нею лишається видимим */
+  .topbar{height:44px}
+  body.show-lib .lib,body.show-insp .insp{top:44px;left:0;right:0;width:auto}
   body.show-insp .insp{top:auto;max-height:56vh;box-shadow:0 -12px 30px -10px rgba(0,0,0,.35)}
   .vc-logo{display:none}
 }
@@ -956,3 +973,5 @@ kbd{font-family:'IBM Plex Sans',sans-serif}
 .key-pick { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .key-color { width: 44px; height: 32px; padding: 2px; border: 1px solid var(--line, #d0d4dc); border-radius: 8px; background: none; cursor: pointer; }
 body.picking-key #pv, body.picking-key #pvLayer { cursor: crosshair !important; }
+
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}

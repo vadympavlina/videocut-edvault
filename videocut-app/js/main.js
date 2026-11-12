@@ -1,5 +1,5 @@
 // Точка входу відеоредактора Edvault.
-import { S, media, on, emit, commit, undo, redo, canUndo, canRedo, select, duration, layout, newProject, resetHistory, editPoints } from './state.js';
+import { S, outputSize, media, on, emit, commit, undo, redo, canUndo, canRedo, select, duration, layout, newProject, resetHistory, editPoints } from './state.js';
 import { addMedia, removeMedia, reviveMedia, removedMedia, purgeRemoved } from './media.js';
 import { initPlayer, resizeCanvas, seek, toggle, pause, play, snapshot, requestDraw } from './player.js';
 import { initTimeline, render as renderTimeline, zoomBy, zoomFit, setZoom } from './timeline.js';
@@ -15,6 +15,8 @@ import { openSilences } from './silences.js';
 import { openVoice, stopVoice, isRecording } from './voice.js';
 import { DB, takeHandoff } from './db.js';
 import { packProject, unpackProject, PROJ_EXT } from './projfile.js';
+import { initDock } from './dock.js';
+import { initA11y } from './a11y.js';
 import { initAsr, openAsr, asrBusy } from './asr.js';
 import { initConvert, needsConvert, convertWithDialog, converting } from './convert.js';
 import { $, icon, hydrateIcons, paintRanges, initTips, initTheme, toast, fmt, openModal, closeModal, anyModalOpen, confirmDialog, downloadBlob, safeName, fmtBytes } from './ui.js';
@@ -264,7 +266,7 @@ document.addEventListener('keydown', e => {
     case 'Equal': case 'NumpadAdd': zoomBy(1.5); break;
     case 'Minus': case 'NumpadSubtract': zoomBy(1 / 1.5); break;
     case 'KeyZ': if (e.shiftKey) zoomFit(); break;
-    case 'Escape': if (S.sel) select(null); else if (!document.body.classList.contains('insp-off')) showProject(false); else clearMarks(); break;
+    case 'Escape': if (S.sel) select(null); else clearMarks(); break;
     case 'Slash': if (e.shiftKey) openModal('helpModal'); break;
     default: return;
   }
@@ -413,7 +415,7 @@ async function takeHandoffIfAny() {
 // маленькі екрани: панелі як висувні
 $('btnShowLib').addEventListener('click', () => { document.body.classList.toggle('show-lib'); document.body.classList.remove('show-insp'); });
 $('btnShowInsp').addEventListener('click', () => { if (!S.sel) showProject(true); document.body.classList.toggle('show-insp'); document.body.classList.remove('show-lib'); });
-$('btnProj').addEventListener('click', () => { const off = document.body.classList.contains('insp-off') || !!S.sel; showProject(off); if (off && matchMedia('(max-width:980px)').matches) { document.body.classList.add('show-insp'); document.body.classList.remove('show-lib'); } if (off) setTimeout(() => document.querySelector('#inspector [data-pf="name"]')?.focus(), 0); });
+$('btnProj').addEventListener('click', () => { showProject(true); if (matchMedia('(max-width:980px)').matches) { document.body.classList.add('show-insp'); document.body.classList.remove('show-lib'); } setTimeout(() => document.querySelector('#inspector [data-pf="name"]')?.focus(), 0); });
 document.addEventListener('pointerdown', e => {
   if (!document.body.matches('.show-lib,.show-insp')) return;
   if (e.target.closest('.lib,.insp,#btnShowLib,#btnShowInsp,.overlay')) return;
@@ -428,6 +430,19 @@ if (window.matchMedia('(max-width: 980px)').matches) toast('Редактор н�
   if (duration() > 0) zoomFit(); else setZoom(60, 0);
   requestDraw();
 })();
+
+initDock();
+initA11y();
+// рядок стану: формат кадру, кількість кліпів, прилипання
+{
+  const sb = { fmt: $('sbFmt'), clips: $('sbClips'), snap: $('sbSnap') };
+  const upd = () => {
+    const { W, H } = outputSize(); sb.fmt.textContent = `${W}×${H} · ${S.project.fps} кадр/с`;
+    const n = S.project.clips.length + (S.project.overlays?.length || 0); sb.clips.textContent = n ? `Елементів на столі: ${n}` : 'Стіл порожній';
+    sb.snap.textContent = $('btnSnapToggle')?.classList.contains('on') ? 'Прилипання ввімкнено' : 'Прилипання вимкнено';
+  };
+  on('project', upd); upd(); $('btnSnapToggle')?.addEventListener('click', () => setTimeout(upd, 0));
+}
 
 // для автотестів
 window.VideoCut = { S, media, seek, commit, exportVideo, exportAudio, duration, layout };

@@ -486,6 +486,28 @@ await step('водіння курсора: картинка оновлюєтьс
   assert.equal(r.back, 0, 'без стрибків назад');
 });
 
+await step('макет: панелі впритул без проміжків, ширина змінюється розділювачем і запам\u2019ятовується, рядок стану й назви кнопок', async () => {
+  const p7 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  await p7.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p7.goto(`http://localhost:${port}/index.html`);
+  await p7.evaluate(() => localStorage.removeItem('vc_panels'));
+  await p7.reload(); await p7.waitForSelector('#vsLib', { state: 'attached' });
+  const g = await p7.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(); const l = r('.lib'), c = r('.center'), i = r('.insp'), tl = r('.tl'), top = r('.topbar'); return { gapLC: Math.round(c.left - l.right), gapCI: Math.round(i.left - c.right), gapTop: Math.round(l.top - top.bottom), left: Math.round(l.left), right: Math.round(1440 - i.right), tlLeft: Math.round(tl.left), tlRight: Math.round(1440 - tl.right), radius: getComputedStyle(document.querySelector('.lib')).borderRadius, theme: document.documentElement.dataset.theme }; });
+  assert.deepEqual([g.gapLC, g.gapCI, g.gapTop, g.left, g.right, g.tlLeft, g.tlRight], [0, 0, 0, 0, 0, 0, 0], 'панелі впритул до країв: ' + JSON.stringify(g));
+  assert.equal(g.radius, '0px', 'без закруглених «острівців»'); assert.equal(g.theme, 'dark', 'тема за замовчуванням темна');
+  const box = await (await p7.$('#vsLib')).boundingBox();
+  await p7.mouse.move(box.x + 3, box.y + 300); await p7.mouse.down(); await p7.mouse.move(box.x + 83, box.y + 300, { steps: 5 }); await p7.mouse.up();
+  const w1 = await p7.evaluate(() => Math.round(document.querySelector('.lib').getBoundingClientRect().width));
+  assert.ok(w1 >= 370 && w1 <= 390, 'ширина панелі змінилась: ' + w1);
+  await p7.reload(); await p7.waitForSelector('#vsLib', { state: 'attached' });
+  assert.equal(await p7.evaluate(() => Math.round(document.querySelector('.lib').getBoundingClientRect().width)), w1, 'ширина збереглась після перезавантаження');
+  assert.match(await p7.textContent('#sbFmt'), /1920×1080 · 30 кадр\/с/);
+  assert.equal(await p7.locator('#inspector .insp-head b').first().textContent(), 'Проєкт', 'без виділення праворуч параметри проєкту');
+  const unnamed = await p7.evaluate(() => [...document.querySelectorAll('button')].filter(b => b.offsetParent && !(b.textContent || '').trim() && !b.getAttribute('aria-label') && !b.getAttribute('aria-labelledby')).map(b => b.id || b.className));
+  assert.deepEqual(unnamed, [], 'усі кнопки мають назву');
+  await p7.close();
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

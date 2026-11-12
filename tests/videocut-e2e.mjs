@@ -990,6 +990,20 @@ await step('стабілізація: аналіз знаходить тремт
   await p27.close(); assert.deepEqual(errs, []);
 });
 
+await step('медіа: пошук за назвою й фільтр «Вільні» з\u2019являються від чотирьох файлів', async () => {
+  const p28 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
+  p28.on('pageerror', e => errs.push(e.message));
+  await p28.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p28.goto(`http://localhost:${port}/index.html`); await p28.waitForFunction(() => window.VideoCut);
+  await p28.setInputFiles('#fileInput', [video, audio, ramp, fx]); await p28.waitForFunction(() => window.VideoCut.media.size === 4, null, { timeout: 20000 }); await p28.waitForTimeout(800);
+  assert.equal(await p28.locator('.mrow:visible').count(), 4);
+  await p28.fill('[data-libq]', 'r.webm'); assert.equal(await p28.locator('.mrow:visible').count(), 1, 'пошук за назвою');
+  await p28.fill('[data-libq]', ''); 
+  await p28.click('.lib-filter [data-filter="unused"]'); const free = await p28.evaluate(() => { const V = window.VideoCut, P = V.S.project, u = new Set([...P.clips, ...P.music, ...P.overlays].map(x => x.mediaId)); return [...V.media.keys()].filter(id => !u.has(id)).length; });
+  assert.equal(await p28.locator('.mrow:visible').count(), free, 'вільні файли: ' + free);
+  await p28.close(); assert.deepEqual(errs, []);
+});
+
 await step('політика безпеки (CSP) не блокує сторінку: жодних порушень під час запуску й роботи', async () => {
   const pc = await browser.newPage({ viewport: { width: 1300, height: 760 } }); const bad = [];
   pc.on('console', m => { if (/Content Security Policy|Refused to/.test(m.text())) bad.push(m.text()); });

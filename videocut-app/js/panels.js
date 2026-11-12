@@ -92,18 +92,19 @@ function drawLibrary() {
   updateTabCounts();
   if (tab === 'media') {
     const all = [...media.values()];
-    const KINDS = [['all', 'Усе'], ['video', 'Відео'], ['image', 'Фото'], ['audio', 'Звук']];
+    const KINDS = [['all', 'Усе'], ['video', 'Відео'], ['image', 'Фото'], ['audio', 'Звук'], ['unused', 'Вільні']];
     const showFilter = all.length >= 4;
     if (!showFilter) mediaFilter = 'all';
-    const items = mediaFilter === 'all' ? all : all.filter(m => m.kind === mediaFilter);
     const used = new Set([...S.project.clips.map(c => c.mediaId), ...S.project.music.map(m => m.mediaId), ...S.project.overlays.map(o => o.mediaId)]);
+    const items = mediaFilter === 'all' ? all : mediaFilter === 'unused' ? all.filter(m => !used.has(m.id)) : all.filter(m => m.kind === mediaFilter);
     setHtml(body, `
       <button class="drop${all.length ? ' drop-sm' : ''}" id="btnImport2">${icon('upload')}<b>Додати файли</b>${all.length ? '' : '<span>Відео, фото або аудіо — або перетягніть їх у вікно</span>'}</button>
+      ${showFilter ? searchBox('Пошук файлу') : ''}
       ${showFilter ? `<div class="seg lib-filter">${KINDS.map(([k, n]) => `<button data-filter="${k}" class="${mediaFilter === k ? 'on' : ''}">${n}</button>`).join('')}</div>` : ''}
       ${items.length ? `<div class="mlist">${items.map(m => {
         let url = thumbCache.get(m.id + ':' + m.thumbs.length);
         if (url === undefined && m.thumbs.length) { url = thumbURL(m); thumbCache.set(m.id + ':' + m.thumbs.length, url); }
-        return `<div class="mcard mrow${used.has(m.id) ? ' used' : ''}" data-id="${m.id}" title="${esc(m.name)}" draggable="true">
+        return `<div class="mcard mrow${used.has(m.id) ? ' used' : ''}" data-q="${esc(m.name)}" data-id="${m.id}" title="${esc(m.name)}" draggable="true">
           <div class="mthumb">${url ? `<img src="${url}" alt="" draggable="false">` : icon(m.kind === 'audio' ? 'music' : m.kind === 'image' ? 'image' : 'video')}
             ${m.kind !== 'image' ? `<span class="mdur">${fmt(m.duration)}</span>` : ''}
             ${m.analyzing ? '<span class="mbusy"></span>' : ''}
@@ -141,12 +142,12 @@ function drawLibrary() {
 // Пошук у вкладках «Текст» і «Елементи»: ховає непотрібні пункти й порожні розділи
 function applyLibFilter() {
   const body = $('libBody'), q = (libQ[tab] || '').trim().toLowerCase();
-  if (tab !== 'text' && tab !== 'elements') return;
+  if (tab !== 'text' && tab !== 'elements' && tab !== 'media') return;
   let any = false;
   body.querySelectorAll('[data-q]').forEach(n => { const ok = !q || n.dataset.q.toLowerCase().includes(q); n.hidden = !ok; if (ok) any = true; });
   body.querySelectorAll('details.lfold').forEach(d => { const vis = d.querySelector('[data-q]:not([hidden])'); d.hidden = !!q && !vis; if (q && vis) d.open = true; });
   const none = body.querySelector('.lib-none'); if (none) none.hidden = !q || any;
-  if (tab === 'text') { let n = body.querySelector('.lib-none'); if (!n) { n = document.createElement('p'); n.className = 'lib-hint lib-none'; n.textContent = 'Нічого не знайдено.'; body.append(n); } n.hidden = !q || any; }
+  if (tab === 'text' || tab === 'media') { let n = body.querySelector('.lib-none'); if (!n) { n = document.createElement('p'); n.className = 'lib-hint lib-none'; n.textContent = 'Нічого не знайдено.'; body.append(n); } n.hidden = !q || any; }
 }
 
 async function onLibClick(e) {

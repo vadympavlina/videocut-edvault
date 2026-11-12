@@ -28,7 +28,7 @@ const srv = createServer(async (q, r) => {
 const port = srv.address().port;
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME, args: ['--no-sandbox'] });
-const page = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+const page = await browser.newPage({ bypassCSP: true, viewport: { width: 1300, height: 760 } });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 await page.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
@@ -323,7 +323,7 @@ await step('хромакей: експорт із накладанням без 
 });
 
 await step('перемотування: кадр не мерехтить і не стрибає назад (основне відео й накладання)', async () => {
-  const p2 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  const p2 = await browser.newPage({ bypassCSP: true, viewport: { width: 1300, height: 760 } });
   await p2.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p2.goto(`http://localhost:${port}/index.html`);
   await p2.setInputFiles('#fileInput', ramp);
@@ -362,7 +362,7 @@ await step('перемотування: кадр не мерехтить і не
 });
 
 await step('перемотування по кількох кліпах: кадр завжди з того кліпа, де курсор, без повторів, залипань і змішування', async () => {
-  const p3 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  const p3 = await browser.newPage({ bypassCSP: true, viewport: { width: 1300, height: 760 } });
   await p3.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p3.goto(`http://localhost:${port}/index.html`);
   for (const f of [ramp, rampB]) { await p3.setInputFiles('#fileInput', f); await p3.waitForTimeout(900); }
@@ -413,7 +413,7 @@ await step('перемотування по кількох кліпах: кад�
 });
 
 await step('розрізаний кліп: обидві половини ділять один відеоелемент, перемотування через розріз без збоїв', async () => {
-  const p4 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  const p4 = await browser.newPage({ bypassCSP: true, viewport: { width: 1300, height: 760 } });
   await p4.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p4.goto(`http://localhost:${port}/index.html`);
   await p4.setInputFiles('#fileInput', ramp);
@@ -436,7 +436,7 @@ await step('розрізаний кліп: обидві половини діл�
 });
 
 await step('відтворення через розріз (вирізаний шматок): без чорних кадрів і зависань на межі', async () => {
-  const p5 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  const p5 = await browser.newPage({ bypassCSP: true, viewport: { width: 1300, height: 760 } });
   await p5.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p5.goto(`http://localhost:${port}/index.html`);
   await p5.setInputFiles('#fileInput', ramp);
@@ -469,7 +469,7 @@ await step('відтворення через розріз (вирізаний �
 });
 
 await step('водіння курсора: картинка оновлюється плавно, без довгих зависань і без стрибків назад', async () => {
-  const p6 = await browser.newPage({ viewport: { width: 1300, height: 760 } });
+  const p6 = await browser.newPage({ bypassCSP: true, viewport: { width: 1300, height: 760 } });
   await p6.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p6.goto(`http://localhost:${port}/index.html`);
   await p6.setInputFiles('#fileInput', ramp);
@@ -494,7 +494,7 @@ await step('водіння курсора: картинка оновлюєтьс
 });
 
 await step('макет: панелі впритул без проміжків, ширина змінюється розділювачем і запам\u2019ятовується, рядок стану й назви кнопок', async () => {
-  const p7 = await browser.newPage({ viewport: { width: 1440, height: 860 } });
+  const p7 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 860 } });
   await p7.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p7.goto(`http://localhost:${port}/index.html`);
   await p7.evaluate(() => localStorage.removeItem('vc_panels'));
@@ -516,7 +516,7 @@ await step('макет: панелі впритул без проміжків, �
 });
 
 await step('пошкоджений проєкт у базі не ламає запуск: редактор відкривається, значення виправляються', async () => {
-  const p8 = await browser.newPage({ viewport: { width: 1300, height: 760 } }); const errs8 = [];
+  const p8 = await browser.newPage({ bypassCSP: true, viewport: { width: 1300, height: 760 } }); const errs8 = [];
   p8.on('pageerror', e => errs8.push(e.message));
   await p8.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p8.goto(`http://localhost:${port}/index.html`); await p8.waitForFunction(() => window.VideoCut);
@@ -535,7 +535,7 @@ await step('пошкоджений проєкт у базі не ламає за
 });
 
 await step('доріжки: перетягування кліпа видно (привид, сусіди розсуваються, підказка), Esc скасовує, скасування повертає порядок', async () => {
-  const p9 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs9 = [];
+  const p9 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 860 } }); const errs9 = [];
   p9.on('pageerror', e => errs9.push(e.message));
   await p9.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p9.goto(`http://localhost:${port}/index.html`); await p9.waitForFunction(() => window.VideoCut);
@@ -559,7 +559,7 @@ await step('доріжки: перетягування кліпа видно (п
 });
 
 await step('виділення кількох: Shift-клік, Ctrl+A, рамка, групове видалення й дублювання, блокування доріжки', async () => {
-  const p10 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  const p10 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 860 } }); const errs = [];
   p10.on('pageerror', e => errs.push(e.message));
   await p10.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p10.goto(`http://localhost:${port}/index.html`); await p10.waitForFunction(() => window.VideoCut);
@@ -587,7 +587,7 @@ await step('виділення кількох: Shift-клік, Ctrl+A, рамк�
 });
 
 await step('керування доріжками: сховати прибирає кадр із перегляду, звук вимикається й соло, стан зберігається в проєкті', async () => {
-  const p11 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  const p11 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 860 } }); const errs = [];
   p11.on('pageerror', e => errs.push(e.message));
   await p11.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p11.goto(`http://localhost:${port}/index.html`); await p11.waitForFunction(() => window.VideoCut);
@@ -609,7 +609,7 @@ await step('керування доріжками: сховати прибира
 });
 
 await step('маркери: M ставить і прибирає, «.» і «,» переходять між ними, прилипання до маркера, зберігаються в проєкті', async () => {
-  const p12 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  const p12 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 860 } }); const errs = [];
   p12.on('pageerror', e => errs.push(e.message));
   await p12.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p12.goto(`http://localhost:${port}/index.html`); await p12.waitForFunction(() => window.VideoCut);
@@ -626,7 +626,7 @@ await step('маркери: M ставить і прибирає, «.» і «,»
 });
 
 await step('обрізка «стик» (Shift): межа двох кліпів зсувається, загальна тривалість не змінюється', async () => {
-  const p13 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  const p13 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 860 } }); const errs = [];
   p13.on('pageerror', e => errs.push(e.message));
   await p13.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p13.goto(`http://localhost:${port}/index.html`); await p13.waitForFunction(() => window.VideoCut);
@@ -644,7 +644,7 @@ await step('обрізка «стик» (Shift): межа двох кліпів 
 });
 
 await step('перегляд: масштаб (Підігнати, 100 %), прокрутка збільшеного кадру, сітка й безпечні поля, налаштування зберігаються', async () => {
-  const p14 = await browser.newPage({ viewport: { width: 1440, height: 860 } }); const errs = [];
+  const p14 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 860 } }); const errs = [];
   p14.on('pageerror', e => errs.push(e.message));
   await p14.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p14.goto(`http://localhost:${port}/index.html`); await p14.waitForFunction(() => window.VideoCut);
@@ -666,7 +666,7 @@ await step('перегляд: масштаб (Підігнати, 100 %), про
 });
 
 await step('права панель: вкладки за змістом для кожного типу, параметри без дублів, «Скинути», панель для кількох елементів', async () => {
-  const p15 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  const p15 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
   p15.on('pageerror', e => errs.push(e.message));
   await p15.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p15.goto(`http://localhost:${port}/index.html`); await p15.waitForFunction(() => window.VideoCut);
@@ -697,7 +697,7 @@ await step('права панель: вкладки за змістом для �
 });
 
 await step('підказки: системних title немає (вони перекривали наші), підказка таймлайну, заголовка доріжки й кнопки показується одна', async () => {
-  const p16 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  const p16 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
   p16.on('pageerror', e => errs.push(e.message));
   await p16.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p16.goto(`http://localhost:${port}/index.html`); await p16.waitForFunction(() => window.VideoCut);
@@ -721,7 +721,7 @@ await step('підказки: системних title немає (вони пе
 });
 
 await step('точне число: клік по значенню біля повзунка, Enter застосовує, Esc скасовує, межі дотримуються', async () => {
-  const p17 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  const p17 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
   p17.on('pageerror', e => errs.push(e.message));
   await p17.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p17.goto(`http://localhost:${port}/index.html`); await p17.waitForFunction(() => window.VideoCut);
@@ -743,7 +743,7 @@ await step('точне число: клік по значенню біля по�
 });
 
 await step('доріжки: полотна мініатюр лишаються на своїх доріжках, коли з\u2019являється нова (немає дублів id), таймлайн росте під вміст', async () => {
-  const p18 = await browser.newPage({ viewport: { width: 1600, height: 900 } }); const errs = [];
+  const p18 = await browser.newPage({ bypassCSP: true, viewport: { width: 1600, height: 900 } }); const errs = [];
   p18.on('pageerror', e => errs.push(e.message));
   await p18.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p18.goto(`http://localhost:${port}/index.html`); await p18.waitForFunction(() => window.VideoCut);
@@ -770,7 +770,7 @@ await step('доріжки: полотна мініатюр лишаються �
 });
 
 await step('історія змін: кроки мають назви, підказки «Скасувати: …», вікно історії повертає до будь-якого кроку', async () => {
-  const p19 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  const p19 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
   p19.on('pageerror', e => errs.push(e.message));
   await p19.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p19.goto(`http://localhost:${port}/index.html`); await p19.waitForFunction(() => window.VideoCut);
@@ -801,7 +801,7 @@ await step('історія змін: кроки мають назви, підк�
 });
 
 await step('доріжки: елемент можна перетягнути в інший ряд і на нову доріжку, порожні ряди зникають', async () => {
-  const p20 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  const p20 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
   p20.on('pageerror', e => errs.push(e.message));
   await p20.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p20.goto(`http://localhost:${port}/index.html`); await p20.waitForFunction(() => window.VideoCut);
@@ -826,7 +826,7 @@ await step('доріжки: елемент можна перетягнути в 
 });
 
 await step('доріжки: висота (низькі/високі) і клавіші Alt+L/M/H/S для доріжки виділеного', async () => {
-  const p21 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  const p21 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
   p21.on('pageerror', e => errs.push(e.message));
   await p21.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p21.goto(`http://localhost:${port}/index.html`); await p21.waitForFunction(() => window.VideoCut);
@@ -850,7 +850,7 @@ await step('доріжки: висота (низькі/високі) і клав
 });
 
 await step('перегляд: збільшений кадр тягнеться мишею, Alt+колесо змінює масштаб, подвійний клік скидає', async () => {
-  const p22 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  const p22 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
   p22.on('pageerror', e => errs.push(e.message));
   await p22.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p22.goto(`http://localhost:${port}/index.html`); await p22.waitForFunction(() => window.VideoCut);
@@ -870,7 +870,7 @@ await step('перегляд: збільшений кадр тягнеться �
 });
 
 await step('ліва панель: пошук у «Тексті» й «Елементах», розділи згортаються й пам\u2019ятають стан, файли списком', async () => {
-  const p23 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  const p23 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); const errs = [];
   p23.on('pageerror', e => errs.push(e.message));
   await p23.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
   await p23.goto(`http://localhost:${port}/index.html`); await p23.waitForFunction(() => window.VideoCut);
@@ -888,6 +888,17 @@ await step('ліва панель: пошук у «Тексті» й «Елем�
   await p23.click('#libTabs [data-tab="text"]'); await p23.click('#libTabs [data-tab="elements"]');
   assert.equal(await p23.locator('details[data-lfold="stickers"]').getAttribute('open'), null, 'стан розділу збережено');
   await p23.close(); assert.deepEqual(errs, []);
+});
+
+await step('політика безпеки (CSP) не блокує сторінку: жодних порушень під час запуску й роботи', async () => {
+  const pc = await browser.newPage({ viewport: { width: 1300, height: 760 } }); const bad = [];
+  pc.on('console', m => { if (/Content Security Policy|Refused to/.test(m.text())) bad.push(m.text()); });
+  pc.on('pageerror', e => bad.push(e.message));
+  await pc.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await pc.goto(`http://localhost:${port}/index.html`); await pc.waitForFunction(() => window.VideoCut);
+  await pc.setInputFiles('#fileInput', video); await pc.waitForTimeout(2500);
+  await pc.click('#libTabs [data-tab="text"]'); await pc.click('.preset >> nth=0'); await pc.waitForTimeout(500);
+  await pc.close(); assert.deepEqual(bad, []);
 });
 
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));

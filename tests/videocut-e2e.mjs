@@ -696,6 +696,30 @@ await step('права панель: вкладки за змістом для �
   await p15.close(); assert.deepEqual(errs, []);
 });
 
+await step('підказки: системних title немає (вони перекривали наші), підказка таймлайну, заголовка доріжки й кнопки показується одна', async () => {
+  const p16 = await browser.newPage({ viewport: { width: 1440, height: 900 } }); const errs = [];
+  p16.on('pageerror', e => errs.push(e.message));
+  await p16.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+  await p16.goto(`http://localhost:${port}/index.html`); await p16.waitForFunction(() => window.VideoCut);
+  await p16.setInputFiles('#fileInput', [video, audio]); await p16.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p16.waitForTimeout(1200);
+  await p16.evaluate(async () => { const { addOverlay } = await import('./videocut-app/js/ops.js'); addOverlay('text', { preset: 'title' }); });
+  await p16.locator('.tl-lanes .clip').first().click(); await p16.waitForTimeout(500);
+  const withTitle = await p16.evaluate(() => [...document.body.querySelectorAll('[title]')].map(e => e.tagName + '.' + String(e.className).split(' ')[0]));
+  assert.deepEqual(withTitle, [], 'у документі немає атрибутів title: ' + withTitle.join(', '));
+  for (const [sel, re] of [['.tl-lanes .clip', /Кліп/], ['.head-v .th-n', /Основне відео/], ['#btnSplit', /Розрізати/], ['.th-lock', /Заблокувати/]]) {
+    await p16.mouse.move(5, 5); await p16.waitForTimeout(100);
+    await p16.hover(sel); await p16.waitForTimeout(700);
+    const tip = await p16.evaluate(() => { const t = document.getElementById('tip'); return { shown: t.classList.contains('show'), text: t.textContent }; });
+    assert.ok(tip.shown && re.test(tip.text), `підказка для ${sel}: ${JSON.stringify(tip)}`);
+  }
+  // після перемальовування таймлайну підказка не висить у повітрі
+  await p16.hover('.tl-lanes .clip'); await p16.waitForTimeout(600);
+  await p16.evaluate(() => { window.VideoCut.S.project.name = 'x'; document.querySelector('#tlLanes').innerHTML = ''; });
+  await p16.waitForTimeout(150);
+  assert.equal(await p16.evaluate(() => document.getElementById('tip').classList.contains('show')), false, 'підказка зникла разом з елементом');
+  await p16.close(); assert.deepEqual(errs, []);
+});
+
 await step('жодної помилки в консолі сторінки', async () => assert.deepEqual(errors, []));
 
 await browser.close(); srv.close();

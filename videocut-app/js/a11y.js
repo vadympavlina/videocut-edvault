@@ -23,7 +23,17 @@ function fixFields(root) {
     if (lab) c.setAttribute('aria-label', String(lab).replace(/\s+/g, ' ').trim());
   });
 }
-export function fixA11y(root = document) { fixButtons(root); fixFields(root); }
+// системна підказка (title) показується поверх нашої (data-tip) і закриває її: переносимо текст у нашу й прибираємо title
+function fixTitles(root) {
+  root.querySelectorAll('[title]').forEach(el => {
+    if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml') return;
+    const tt = el.getAttribute('title');
+    if (tt && !el.dataset.tip) el.dataset.tip = tt;
+    if (tt && !el.getAttribute('aria-label') && !(el.textContent || '').trim() && /^(BUTTON|A|INPUT|SELECT)$/.test(el.tagName)) el.setAttribute('aria-label', tt);
+    el.removeAttribute('title');
+  });
+}
+export function fixA11y(root = document) { fixTitles(root); fixButtons(root); fixFields(root); }
 export function initA11y() {
   fixA11y();
   let queued = false;

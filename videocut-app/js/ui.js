@@ -312,6 +312,10 @@ export function initTips() {
     }, 420);
   });
   document.addEventListener('pointerdown', () => { clearTimeout(timer); tip.classList.remove('show'); cur = null; }, true);
+  // елемент, над яким висить підказка, зник із сторінки (таймлайн перемалювався) — ховаємо її, щоб вона не «зависала»
+  new MutationObserver(() => { if (cur && !cur.isConnected) { clearTimeout(timer); tip.classList.remove('show'); cur = null; } }).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('scroll', () => { clearTimeout(timer); tip.classList.remove('show'); }, true);
+  window.addEventListener('blur', () => { clearTimeout(timer); tip.classList.remove('show'); });
 }
 
 // ── тема ──

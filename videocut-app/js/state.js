@@ -208,7 +208,11 @@ function restore(snap) {
   emit('select');
   emit('history');
 }
-export function undo() { if (!undoStack.length) return false; const e = undoStack.pop(); redoStack.push({ s: last, label: e.label }); restore(e.s); return true; }
+export function undo() {
+  // правку, яку ще не записано кроком (друк у полі, повзунок), фіксуємо перед скасуванням: інакше скасувалось би й попереднє, а ця правка зникла б
+  commit();
+  if (!undoStack.length) return false; const e = undoStack.pop(); redoStack.push({ s: last, label: e.label }); restore(e.s); return true;
+}
 export function redo() { if (!redoStack.length) return false; const e = redoStack.pop(); undoStack.push({ s: last, label: e.label }); restore(e.s); return true; }
 export const canUndo = () => undoStack.length > 0;
 export const canRedo = () => redoStack.length > 0;

@@ -156,7 +156,7 @@ async function importFiles(files, { logo = false, layer = false, toTimeline = tr
       added++;
       if (logo && m.kind === 'image') addOverlay('image', { mediaId: m.id });
       else if (layer && m.kind !== 'audio' && S.project.clips.length) addLayerAt(m, { start: S.t });
-      else if (toTimeline && (m.kind !== 'image' || !S.project.clips.length || files.length > 1)) addToTimeline(m, { silent: true });
+      else if (toTimeline) addToTimeline(m, { silent: true }); // і відео, і фото, і аудіо — на таймлайн (раніше одиночне фото при готовому проєкті лишалося лише в бібліотеці)
     } catch (e) {
       console.error(e);
       toast(e.message || 'Не вдалося відкрити файл', 'err', 5000);
@@ -293,7 +293,7 @@ function saveNow() {
   clearTimeout(saveTimer);
   const list = [...media.values()].map(m => ({ id: m.id, name: m.name }));
   return Promise.all([DB.set('project', S.project), DB.set('mediaList', list)])
-    .then(() => { savePending = false; setSaveState('Збережено'); })
+    .then(() => { savePending = false; try { localStorage.removeItem(PENDING_KEY); } catch { /* сховище недоступне */ } setSaveState('Збережено'); })
     .catch(e => { console.warn(e); setSaveState('Не збережено'); });
 }
 function scheduleSave() { setSaveState('Зберігаємо…'); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 700); }
@@ -301,7 +301,15 @@ function scheduleSave() { setSaveState('Зберігаємо…'); clearTimeout(
 let savePending = false;
 on('project', d => { if (d && d.committed) savePending = true; });
 on('media', () => { savePending = true; });
-const flushSave = () => { if (savePending) { savePending = false; saveNow(); } };
+// IndexedDB під час закриття вкладки може не встигнути записати, тому в цей момент синхронно кладемо копію проєкту в localStorage:
+// наступного запуску вона новіша за базу й підхоплюється (після успішного звичайного збереження копія видаляється)
+const PENDING_KEY = 'edvault-videocut-pending';
+const flushSave = () => {
+  if (!savePending) return;
+  savePending = false;
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify({ project: S.project, list: [...media.values()].map(m => ({ id: m.id, name: m.name })) })); } catch { /* забагато даних: лишається збереження в базі */ }
+  saveNow();
+};
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
 window.addEventListener('pagehide', flushSave);
 on('project', d => { if (d && d.committed) scheduleSave(); });
@@ -310,6 +318,11 @@ on('media', scheduleSave);
 async function restore() {
   let p = null, list = [];
   try { p = await DB.get('project'); list = (await DB.get('mediaList')) || []; } catch (e) { console.warn(e); }
+  try { // копія, яку не встигла записати база при закритті вкладки, новіша
+    const raw = localStorage.getItem(PENDING_KEY); localStorage.removeItem(PENDING_KEY);
+    const pend = raw && JSON.parse(raw);
+    if (pend && pend.project && Array.isArray(pend.project.clips) && Array.isArray(pend.list)) { p = pend.project; list = pend.list; }
+  } catch { /* пошкоджена копія ігнорується */ }
   if (!p || !p.clips) return false;
   const missing = [];
   // блоби читаємо з бази паралельно, а відкриваємо по черзі — зберігається порядок файлів у бібліотеці

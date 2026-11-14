@@ -236,7 +236,10 @@ export function render() {
     const label = o.type === 'text' ? (o.text || '').split('\n')[0] : o.type === 'emoji' ? (o.emoji || '') + ' ' + OV_LABEL.emoji : OV_LABEL[o.type];
     return `<div class="it ov ov-${o.type}${selCls('overlay', o.id)}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + rowOf.get(o.id) * ROW}px;height:${ROW - 4}px">${icon(OV_ICON[o.type] || 'shapes')}<span>${esc(label)}</span>${kfMarks(o, o.dur)}${hnd}</div>`;
   }).join('');
-  const cc = p.captions.map(c => `<div class="it cc${selCls('caption', c.id)}" data-kind="caption" data-id="${c.id}" style="left:${c.start * pps}px;width:${Math.max(4, c.dur * pps)}px;height:${CC_H - 4}px"><span>${esc(c.text)}</span>${hnd}</div>`).join('');
+  // субтитри, що збігаються в часі (наприклад, дві репліки одночасно), складаються у ряди, щоб жоден не ховався під іншим
+  const cr = assignRows(p.captions.map(c => ({ id: c.id, start: c.start, dur: c.dur })));
+  const ccRows = cr.n;
+  const cc = p.captions.map(c => `<div class="it cc${selCls('caption', c.id)}" data-kind="caption" data-id="${c.id}" style="left:${c.start * pps}px;width:${Math.max(4, c.dur * pps)}px;top:${3 + cr.rowOf.get(c.id) * CC_H}px;height:${CC_H - 4}px"><span>${esc(c.text)}</span>${hnd}</div>`).join('');
   const clips = layout().map((l, idx) => {
     const c = l.clip, m = media.get(c.mediaId);
     const badges = [];
@@ -264,7 +267,7 @@ export function render() {
   if (layers.length || (dragVis && p.clips.length)) rows.push([v2H, 'lane-v2', `<canvas class="lane-canvas" id="tlV2Canvas"></canvas>${empty(!layers.length, 'Відпустіть тут — буде поверх основного відео')}${lay}`, 'pip', 'Поверх', 'Відео 2 — поверх основного']);
   rows.push([V_H, 'lane-v', `<canvas class="lane-canvas" id="tlVCanvas"></canvas>${empty(!p.clips.length, 'Перетягніть сюди відео або фото')}${clips}${sil}`, 'video', 'Відео', 'Основне відео']);
   if (p.music.length || dragAud) rows.push([A_H * muRows, 'lane-a', `<canvas class="lane-canvas" id="tlACanvas"></canvas>${empty(!p.music.length, 'Відпустіть тут — музика чи звук')}${mu}`, 'music', 'Звук', 'Музика та озвучення']);
-  if (p.captions.length) rows.push([CC_H, 'lane-cc', cc, 'cc', 'Субтитри', 'Субтитри']);
+  if (p.captions.length) rows.push([CC_H * ccRows, 'lane-cc', cc, 'cc', 'Субтитри', 'Субтитри']);
   if (graphics.length) rows.push([ovH, 'lane-ov', ov, 'text', 'Графіка', 'Текст, стрілки, розмиття']);
   const laneKey = cls => cls.slice(5); // lane-v → v
   const stCls = cls => { const s = trackOf(laneKey(cls)); return (s.hide ? ' is-hidden' : '') + (s.lock ? ' is-locked' : '') + (s.mute || s.solo ? ' is-muted' : ''); };

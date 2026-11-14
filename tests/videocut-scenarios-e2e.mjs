@@ -38,7 +38,7 @@ async function open(w = 1440, h = 900) {
 const addFiles = async (p, files, wait = 1200) => { const before = await p.evaluate(() => window.VideoCut.S.project.clips.length + window.VideoCut.S.project.music.length + window.VideoCut.S.project.overlays.length); await p.setInputFiles('#fileInput', files.map(F)); await p.waitForTimeout(wait); return before; };
 
 // Інваріанти проєкту: повертає список проблем (порожній — усе гаразд)
-const AUDIT = async () => {
+const AUDIT = async opt => {
   const { S, media } = window.VideoCut, st = await import('./videocut-app/js/state.js');
   const P = S.project, out = [];
   const walk = (v, path) => { if (typeof v === 'number' && !Number.isFinite(v)) out.push('не число: ' + path); else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (path.length < 80) walk(x, path + '.' + k); };
@@ -53,12 +53,16 @@ const AUDIT = async () => {
   const end = Math.max(0, ...P.music.map(x => x.start + (x.out - x.in)), ...P.overlays.map(o => o.start + o.dur), ...P.captions.map(c => c.start + c.dur), t);
   if (Math.abs(d - end) > 0.02 && d < end) out.push(`тривалість ${d} менша за кінець елементів ${end}`);
   for (const m of S.multi) if (!st.findSel || !([P.clips, P.overlays, P.captions, P.music].some(l => l.some(o => o.id === m.id)))) out.push('виділено неіснуючий ' + m.id);
+  // на екрані елементи однієї доріжки й ряду не налазять один на одного, а їхній розмір збігається з тривалістю
+  const pps = S.pps; const groups = new Map();
+  for (const el of document.querySelectorAll('.tl-lanes .it')) { if (el.classList.contains('tl-ghost')) continue; const lane = el.closest('.lane'); if (!lane) continue; const r = el.getBoundingClientRect(); if (!r.width) continue; const key = lane.className + '|' + Math.round(r.top); (groups.get(key) || groups.set(key, []).get(key)).push({ id: el.dataset.id, l: r.left, r: r.right, w: r.width }); }
+  for (const [key, list] of groups) { list.sort((a, b) => a.l - b.l); for (let i = 1; i < list.length; i++) if (list[i].l < list[i - 1].r - 1.5 && list[i].w > 16.5 && list[i - 1].w > 16.5) out.push(`на таймлайні елементи налазять один на одного (${key.split('|')[0].split(' ').pop()}): ${list[i - 1].id} / ${list[i].id}`); }
   // відновлення проєкту не повинно нічого міняти
   const rep = JSON.stringify(st.repairProject(structuredClone(P))), cur = JSON.stringify(P);
   if (rep !== cur) { const a = JSON.parse(rep); for (const k of Object.keys(P)) if (!['tracks', 'luts'].includes(k) && JSON.stringify(a[k]) !== JSON.stringify(P[k])) out.push('repairProject змінює поле ' + k); }
   // скасування й повтор повертають той самий стан
   const before = JSON.stringify(P), m0 = S.multi.slice(), s0 = S.sel;
-  if (st.canUndo()) { st.undo(); st.redo(); if (JSON.stringify(S.project) !== before) out.push('скасувати+повторити не повертає стан'); S.multi = m0; S.sel = s0; } // перевірка не повинна змінювати виділення
+  if (!(opt && opt.fast) && st.canUndo()) { st.undo(); st.redo(); if (JSON.stringify(S.project) !== before) out.push('скасувати+повторити не повертає стан'); S.multi = m0; S.sel = s0; } // перевірка не повинна змінювати виділення
   return out;
 };
 const audit = async (p, label = '') => { const bad = await p.evaluate(AUDIT); assert.deepEqual(bad, [], `${label}: ${bad.join('; ')}`); const errs = p.errors.filter(e => !(p.allow || []).some(r => r.test(e))); assert.deepEqual(errs, [], `${label}: помилки сторінки`); };
@@ -315,15 +319,16 @@ async function monkey(seed, steps) {
           case 'seek': V.seek(at()); break;
         }
       }, { op, a, b, c, d });
-      await p.waitForTimeout(20);
+      await p.waitForTimeout(70);
     } catch (e) { err = e; }
     const bad = err ? ['виняток: ' + err.message.split('\n')[0]] : await p.evaluate(AUDIT);
     const errs = p.errors.filter(e => !(p.allow || []).some(r => r.test(e)));
+    if (bad.some(b => /налазять/.test(b))) { const g = await p.evaluate(async () => { const st = await import('./videocut-app/js/state.js'); return { pps: window.VideoCut.S.pps, dom: [...document.querySelectorAll('.lane-v .it')].map(e => [e.dataset.id.slice(-4), Math.round(e.getBoundingClientRect().left * 10) / 10, Math.round(e.getBoundingClientRect().width * 10) / 10, e.style.left, e.style.width]), lay: st.layout().map(l => [l.clip.id.slice(-4), +l.start.toFixed(3), +l.end.toFixed(3), l.clip.speed]) }; }); console.log('   геометрія:', JSON.stringify(g)); }
     if (bad.length || errs.length) { await p.close(); throw new Error(`крок ${i} ${log[i]}: ${[...bad, ...errs].join('; ')}\n  ланцюжок: ${log.slice(Math.max(0, i - 12), i + 1).join(' → ')}`); }
   }
   await p.close();
 }
-for (const seed of [1, 2, 3, 4]) await run(`мавпа (seed ${seed}): 150 випадкових дій, після кожної проєкт коректний`, () => monkey(seed, 150));
+for (const seed of (process.env.VC_SEEDS ? process.env.VC_SEEDS.split(",").map(Number) : [1, 2, 3, 4])) await run(`мавпа (seed ${seed}): 150 випадкових дій, після кожної проєкт коректний`, () => monkey(seed, 150));
 
 
 // ═════ 5. Експорт змішаного проєкту: відео + фото + вертикальне відео + музика + накладання ═════
@@ -552,6 +557,79 @@ await run('клавіші: Ctrl+A, Ctrl+C/V, Ctrl+D, Ctrl+X, Delete для зм�
   const starts = a.music.map(x => x.start).sort((x, y) => x - y).slice(-3); assert.ok(starts[0] >= 7.99, 'вставлено у позиції курсора: ' + starts);
   await p.keyboard.press('Delete'); await p.waitForTimeout(200); await audit(p, 'Delete'); { const c = count(await n0()); assert.ok(c <= before, `Delete видаляє виділене (вставлені елементи): було ${before + 5}, стало ${c}, виділено ${await p.evaluate(() => JSON.stringify(window.VideoCut.S.multi.length + '/' + (window.VideoCut.S.sel && window.VideoCut.S.sel.kind)))}`); }
   await p.keyboard.press('Control+z'); await p.waitForTimeout(100); await p.keyboard.press('Control+Shift+z'); await p.waitForTimeout(100); await audit(p, 'скасувати й повторити'); await p.close();
+});
+
+
+// ═════ 12. Макет: вікна різних розмірів ═════
+await run('макет: на екранах 1024–1920 пікселів панель перегляду не має накладань, сторінка не прокручується вбік, права панель вміщається', async () => {
+  for (const [w, h] of [[1024, 640], [1180, 720], [1280, 720], [1366, 768], [1536, 864], [1920, 1080]]) {
+    const p = await richProject(); await p.setViewportSize({ width: w, height: h }); await p.waitForTimeout(500);
+    for (const sel of ['music', 'clip', 'overlay']) {
+      await p.evaluate(async sel => { const P = window.VideoCut.S.project, st = await import('./videocut-app/js/state.js'); st.select(sel, (sel === 'music' ? P.music : sel === 'clip' ? P.clips : P.overlays)[0].id); }, sel); await p.waitForTimeout(250);
+      const r = await p.evaluate(() => {
+        const box = e => { if (!e) return null; const b = e.getBoundingClientRect(); return b.width ? { l: b.left, r: b.right, t: b.top, b: b.bottom } : null; };
+        const hit = (a, b) => a && b && a.l < b.r - 1 && a.r > b.l + 1 && a.t < b.b - 1 && a.b > b.t + 1;
+        const tools = document.querySelector('.pv-tools'), tc = document.querySelector('.pv-bar .tb-c'), insp = document.getElementById('inspector');
+        const wide = [...insp.querySelectorAll('*')].filter(e => e.offsetParent && e.getBoundingClientRect().right > insp.getBoundingClientRect().right + 1 && getComputedStyle(e).position !== 'fixed').slice(0, 3).map(e => e.className || e.tagName);
+        const el = document.documentElement;
+        return { overlap: hit(box(tools), box(tc)), hs: el.scrollWidth > innerWidth, vs: el.scrollHeight > innerHeight + 1, wide };
+      });
+      assert.ok(!r.overlap, `${w}×${h} ${sel}: кнопки масштабу налізають на кнопки відтворення`); assert.ok(!r.hs, `${w}×${h}: з’явилась горизонтальна прокрутка`); assert.ok(!r.vs, `${w}×${h}: з’явилась вертикальна прокрутка сторінки`); assert.deepEqual(r.wide, [], `${w}×${h} ${sel}: елементи праворуч виходять за праву панель: ${r.wide}`);
+    }
+    await p.close();
+  }
+});
+
+
+// ═════ 13. Налаштування звуку в експорті: гучність, вимкнення, соло, фейди, швидкість ═════
+await run('звук в експорті: гучність кліпа й музики, вимкнення, соло, поява (fade), швидкість змінюють результат так, як обіцяє панель', async () => {
+  const p = await open(1500, 900); await addFiles(p, ['v1.webm', 'a2.wav'], 3000);
+  const set = fn => p.evaluate(async fnSrc => { const V = window.VideoCut, st = await import('./videocut-app/js/state.js'); const P = V.S.project; P.clips[0].in = 0; P.clips[0].out = 4; P.clips[0].speed = 1; P.clips[0].volume = 1; P.clips[0].muted = false;
+    window.__m ||= structuredClone(P.music[0]); P.music = [structuredClone(window.__m)]; const m = P.music[0]; m.start = 0; m.in = 0; m.out = 4; m.volume = 1; m.fadeIn = 0; m.fadeOut = 0; m.duck = false; P.tracks = {}; new Function('P', 'st', fnSrc)(P, st); st.commit('Тест'); }, fn);
+  const exp = async (range = [0, 4]) => exportBlob(p, { format: 'webm', quality: 'low', short: 360, fps: 10, range });
+  await set("P.music.length = 0;"); const base = rmsOf(await exp(), 0.5, 3);
+  await set("P.music.length = 0; P.clips[0].volume = 0.5;"); const half = rmsOf(await exp(), 0.5, 3); assert.ok(Math.abs((base - half) - 6) < 1.8, `гучність кліпа 50 % тихіша на ~6 дБ: ${base} → ${half}`);
+  await set("P.clips[0].muted = true; P.music.length = 0;"); const muted = rmsOf(await exp(), 0.5, 3); assert.ok(muted === null || muted < -70, 'вимкнений кліп мовчить: ' + muted);
+  await set("P.clips[0].muted = true;"); const mu1 = rmsOf(await exp(), 0.5, 3); await set("P.clips[0].muted = true; P.music[0].volume = 0.5;"); const mu2 = rmsOf(await exp(), 0.5, 3); assert.ok(Math.abs((mu1 - mu2) - 6) < 1.8, `музика 50 % тихіша на ~6 дБ: ${mu1} → ${mu2}`);
+  await set("P.clips[0].muted = true; P.music[0].fadeIn = 2;"); const fe = await exp(); const f0 = rmsOf(fe, 0.05, 0.4), f1 = rmsOf(fe, 2.5, 1); assert.ok(f1 - f0 > 8, `поява музики 2 с: початок тихіший за середину: ${f0} → ${f1}`);
+  await set("P.clips[0].muted = true; P.music[0].fadeOut = 2;"); const fo = await exp(); const g0 = rmsOf(fo, 0.5, 1), g1 = rmsOf(fo, 3.6, 0.35); assert.ok(g0 - g1 > 8, `зникнення музики 2 с: кінець тихіший: ${g0} → ${g1}`);
+  await set("P.tracks = { a: { solo: true } };"); const solo = rmsOf(await exp(), 0.5, 3); assert.ok(Math.abs(solo - mu1) < 2, `соло музичної доріжки: звучить лише музика (${solo} проти ${mu1})`);
+  await set("P.tracks = { a: { mute: true } }; P.clips[0].muted = true;"); const am = rmsOf(await exp(), 0.5, 3); assert.ok(am === null || am < -70, 'вимкнена доріжка звуку мовчить: ' + am);
+  await set("P.music.length = 0; P.clips[0].out = 4; P.clips[0].speed = 2;"); const sp = await exp([0, 2]); assert.ok(Math.abs(parseFloat(probe(sp).format.duration) - 2) < 0.4, 'швидкість 2×: 4 с стають 2 с'); const spr = rmsOf(sp, 0.3, 1.4); assert.ok(spr > -45, 'при прискоренні звук є: ' + spr);
+  await audit(p, 'після усіх експортів'); await p.close();
+});
+
+
+// ═════ 14. Права панель: кожна кнопка (дії, швидкі набори, піпетка, форми) ═════
+async function clickAllInspector(p, kind, id, label) {
+  const SKIPRE = /^\s*#[0-9a-f]{3,8}\b|стабіл|задом|реверс|шум|голос|розпіз|автосубтитр|\.cube|LUT|Імпорт|файл|Додати файл|Обрати файл|Завантаж/i;
+  await p.evaluate(async ({ kind, id }) => { (await import('./videocut-app/js/state.js')).select(kind, id); }, { kind, id }); await p.waitForTimeout(250);
+  const tabs = await p.locator('#inspector [role=tab]').count(); let clicked = 0;
+  for (let ti = -1; ti < tabs; ti++) {
+    if (ti >= 0) { const exists = await p.evaluate(({ kind, id }) => { const P = window.VideoCut.S.project; return [...P.clips, ...P.music, ...P.overlays, ...P.captions].some(o => o.id === id); }, { kind, id }); if (!exists) return clicked; await p.locator('#inspector [role=tab]').nth(ti).click().catch(() => {}); await p.waitForTimeout(120); }
+    const n = await p.locator('#inspector button:not([role=tab])').count();
+    for (let i = 0; i < n; i++) {
+      const b = p.locator('#inspector button:not([role=tab])').nth(i); if (!await b.isVisible().catch(() => false)) continue; if (await b.isDisabled().catch(() => true)) continue;
+      const txt = await b.evaluate(e => e.innerText.trim() + ' ' + (e.dataset.a || e.dataset.act || e.dataset.set || '') + ' ' + (e.getAttribute('aria-label') || ''));
+      if (SKIPRE.test(txt) || /deselect|Готово|p:aspect|p:fps/.test(txt)) continue;
+      const still = await p.evaluate(({ id }) => { const P = window.VideoCut.S.project; return [...P.clips, ...P.music, ...P.overlays, ...P.captions].some(o => o.id === id); }, { id }); if (!still) return clicked;
+      if (process.env.VC_TRACE) console.log('   клік:', label, '·', txt.trim().slice(0, 50));
+      await b.click({ timeout: 1500 }).catch(() => {}); clicked++; await p.waitForTimeout(60);
+      if (await p.locator('.overlay.open').count()) { const yes = p.locator('.overlay.open #confirmNo'); if (await yes.count()) await yes.click().catch(() => {}); else await p.keyboard.press('Escape'); await p.waitForTimeout(80); }
+      const bad = await p.evaluate(AUDIT, { fast: true }); assert.deepEqual(bad, [], `${label} · кнопка «${txt.trim().slice(0, 40)}»: ${bad.join('; ')}`);
+    }
+  }
+  return clicked;
+}
+await run('права панель: кожна кнопка для кліпа, фото, музики, голосу, тексту, фігур, шару поверх відео, субтитру — без помилок і з коректним проєктом', async () => {
+  const p = await richProject(); p.allow = [/Поставте|Не вдалося|Error: Немає/]; await addFiles(p, ['photo.png', 'v2.webm'], 2500);
+  await p.evaluate(async () => { const ops = await import('./videocut-app/js/ops.js'), V = window.VideoCut; const ms = [...V.media.values()]; V.seek(3); ops.addLayerAt(ms.find(m => m.name === 'v2.webm'), { start: 2 }); ops.addLayerAt(ms.find(m => m.name === 'photo.png'), { start: 3 }); for (const t of ['arrow', 'blur', 'spot', 'emoji', 'progress']) ops.addOverlay(t); });
+  await p.waitForTimeout(500);
+  const all = await p.evaluate(() => { const P = window.VideoCut.S.project; return [...P.clips.map(o => ['clip', o.id, 'кліп']), ...P.music.map(o => ['music', o.id, o.voice ? 'голос' : 'музика']), ...P.overlays.map(o => ['overlay', o.id, 'накладання ' + o.type]), ...P.captions.map(o => ['caption', o.id, 'субтитр'])]; });
+  const seen = new Set(), reps = all.filter(([k, , l]) => !seen.has(l) && seen.add(l)); // по одному представнику кожного виду
+  let total = 0; for (const [kind, id, label] of reps) total += await clickAllInspector(p, kind, id, label); await audit(p, 'після усіх кнопок');
+  assert.ok(total > 30, 'натиснуто достатньо кнопок: ' + total);
+  assert.deepEqual(p.errors.filter(e => !(p.allow || []).some(r => r.test(e))), [], 'помилки сторінки'); await p.close();
 });
 
 //__NEXT__

@@ -1045,6 +1045,9 @@ body.tl-dragging .it .h{cursor:inherit}
 .pv-zoom select{height:26px;padding:0 6px;font-size:12px;width:92px;min-height:24px}
 .pv-tools .btn.on{background:var(--accent-light);color:var(--accent)}
 @media(max-width:760px){.pv-tools{display:none}}
+/* вузька панель перегляду (бічні панелі широкі): масштаб, сітка й поля не налізають на кнопки відтворення й час */
+.pv-bar{container:pvbar / inline-size}
+@container pvbar (max-width:640px){.pv-tools{display:none}}
 
 /* ════════════ Права панель П1: шапка, швидкі дії, вкладки, рядки властивостей ════════════ */
 .insp{padding:0;overflow:hidden;display:flex;flex-direction:column}

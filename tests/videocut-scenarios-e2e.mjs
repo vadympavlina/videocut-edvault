@@ -72,7 +72,8 @@ const info = p => p.evaluate(() => { const { S, media } = window.VideoCut; retur
 let n = 0, failed = 0;
 const step = async (name, fn) => { try { await fn(); console.log('ok  ', ++n, name); } catch (e) { failed++; console.log('FAIL', ++n, name, '\n   ', (e.message || String(e)).split('\n').slice(0, 6).join('\n    ')); process.exitCode = 1; } };
 const only = process.env.VC_ONLY;
-const run = (name, fn) => (only && !name.includes(only) ? null : step(name, fn));
+const skip = (process.env.VC_SKIP || '').split('|').filter(Boolean); // VC_SKIP="кожна кнопка|мавпа" — пропустити довгі сценарії
+const run = (name, fn) => ((only && !name.includes(only)) || skip.some(k => name.includes(k)) ? null : step(name, fn));
 
 // ═════ 1. Додавання файлів ═════
 await run('додавання: відео, вертикальне відео, фото й аудіо по одному, кожне додається один раз, формат кадру береться з першого', async () => {

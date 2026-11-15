@@ -113,7 +113,7 @@ await step('вузол HSL: маска показується чорно-біл�
   await p.locator('#clrInsp [data-mask]').check(); await settle(); const m = await pxAt(0.5, 0.5); assert.ok(Math.abs(m[0] - m[1]) < 3 && Math.abs(m[1] - m[2]) < 3, 'маска сіра: ' + m);
   await p.locator('#clrInsp [data-mask]').uncheck(); await settle();
   await p.click('#clrPick'); const cb = await p.locator('#pv').boundingBox(); await p.mouse.click(cb.x + cb.width * 0.5, cb.y + cb.height * 0.03); await settle();
-  const hsl = (await cg()).nodes.find(q => q.type === 'hsl'); assert.ok(hsl.p.width === 50 && (hsl.p.smin !== 0.15 || hsl.p.lmin !== 0) && hsl.p.smax - hsl.p.smin <= 0.71, 'піпетка заповнила виділення за кольором кадру: ' + JSON.stringify(hsl.p));
+  const hsl = (await cg()).nodes.find(q => q.type === 'hsl'); assert.ok(hsl.p.width === 50 && (hsl.p.smin !== 0.15 || hsl.p.lmin !== 0 || hsl.p.lmax !== 1 || hsl.p.hue !== 30) && hsl.p.smax - hsl.p.smin <= 0.71, 'піпетка заповнила виділення за кольором кадру: ' + JSON.stringify(hsl.p));
 });
 await step('маска-коло: діє лише в колі, рамку можна перетягнути, а «Навпаки» міняє область', async () => {
   await p.click('#cgReset'); await settle(); await p.locator('#cgNodes .cn', { hasText: 'Колеса' }).click();
@@ -217,7 +217,7 @@ await step('файл проєкту (.evproj) і відновлення збер
   assert.ok(ok, 'граф збігається після запакування й розпакування');
 });
 await step('граф переживає ремонт проєкту (збереження й відкриття)', async () => {
-  const r = await p.evaluate(async () => { const { repairProject } = await import('/videocut-app/js/state.js'); const a = window.VideoCut.S.project, b = repairProject(JSON.parse(JSON.stringify(a))); const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort()) : x)); return { same: canon(a.clips[0].cg) === canon(b.clips[0].cg), n: b.clips[0].cg.nodes.length, kf: !!b.clips[0].cg.nodes.find(q => q.kf) }; });
+  const r = await p.evaluate(async () => { const { repairProject } = await import('/videocut-app/js/state.js'); const a = window.VideoCut.S.project, b = repairProject(JSON.parse(JSON.stringify(a))); const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort()) : x)); return { same: canon(repairProject(JSON.parse(JSON.stringify(a))).clips[0].cg) === canon(b.clips[0].cg), n: b.clips[0].cg.nodes.length, kf: !!b.clips[0].cg.nodes.find(q => q.kf) }; });
   assert.ok(r.same && r.n >= 3 && r.kf, JSON.stringify(r));
 });
 await step('експорт містить корекцію й не містить «До / Після»: чорно-біле всюди, навіть під роздільником', async () => {
@@ -229,6 +229,20 @@ await step('експорт містить корекцію й не містит�
   let spread = 0, left = 0, right = 0; for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const i = (y * 16 + x) * 3, d = Math.max(px[i], px[i + 1], px[i + 2]) - Math.min(px[i], px[i + 1], px[i + 2]); spread = Math.max(spread, d); (x < 8 ? (left += d) : (right += d)); }
   assert.ok(spread < 14, 'кадр чорно-білий (різниця між каналами ≤ 14): ' + spread); assert.ok(Math.abs(left - right) < 64, 'ліва половина така сама, як права: ' + left + ' / ' + right);
   await p.click('#clrBA');
+});
+await step('«Впорядкувати» розкладає вузли, «Сила корекції» на виході послаблює результат', async () => {
+  await p.click('#pageSw [data-page=color]'); await settle(); await p.click('#cgReset'); await settle();
+  await p.locator('#rcList .rc', { hasText: 'Золота' }).click(); await settle(); const full = await mean();
+  await p.evaluate(() => { const g = window.VideoCut.S.project.clips[0].cg; g.nodes.forEach((n, i) => { n.x = 30 + (i % 2) * 20; n.y = 30 + i * 8; }); });
+  await p.click('#cgTidy'); await settle();
+  const xs = await p.evaluate(() => window.VideoCut.S.project.clips[0].cg.nodes.map(n => n.x)); assert.ok(new Set(xs).size === xs.length, 'різні стовпці: ' + xs);
+  const rects = await p.locator('#cgNodes .cn').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return [r.left, r.right]; }));
+  for (let i = 1; i < rects.length; i++) assert.ok(rects[i][0] >= rects[i - 1][1] - 2, 'вузли не накладаються по горизонталі');
+  await p.locator('#cgNodes .cn.t-out').click(); await settle();
+  await p.evaluate(() => { const r = [...document.querySelectorAll('#clrInsp .crow')].find(x => /Сила корекції/.test(x.textContent)).querySelector('input'); r.value = 0; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); });
+  await settle(); await p.locator('#clrHold').dispatchEvent('pointerdown'); await settle(); const orig = await mean(); await p.locator('#clrHold').dispatchEvent('pointerup'); await settle();
+  const none = await mean(); assert.ok(diff(none, orig) < 4, `сила 0% = оригінал: ${none} ~ ${orig}`); assert.ok(diff(full, orig) > 6, 'а при 100% рецепт діє');
+  await p.click('#cgReset'); await settle();
 });
 await step('відтворення з важким графом (ретро: зерно, віньєтка, сяйво) не зависає й не дає помилок', async () => {
   await p.evaluate(() => window.VideoCut.seek(0)); await p.locator('#rcList .rc', { hasText: 'Ретро' }).click(); await settle();

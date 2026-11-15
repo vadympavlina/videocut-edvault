@@ -36,7 +36,7 @@ export const DEFAULTS = {
   lut: () => ({ lut: null, mix: 1 }),
   fx: () => ({ vig: 0, vigSize: 0.55, grain: 0, glow: 0, fade: 0 }),
   mix: () => ({ mode: 'normal', amount: 0.5 }),
-  in: () => ({}), out: () => ({}),
+  in: () => ({}), out: () => ({ amount: 1 }),
 };
 
 export const MASKABLE = ['prim', 'curves', 'hsl', 'lut', 'fx'];
@@ -158,6 +158,7 @@ function fixParams(type, p) {
   if (type === 'lut') return { lut: typeof p.lut === 'string' ? p.lut.slice(0, 40) : null, mix: num(p.mix, 1, 0, 1) };
   if (type === 'fx') return { vig: num(p.vig, 0, 0, 1), vigSize: num(p.vigSize, 0.55, 0.1, 1), grain: num(p.grain, 0, 0, 1), glow: num(p.glow, 0, 0, 1), fade: num(p.fade, 0, 0, 1) };
   if (type === 'mix') return { mode: MIX_ID.includes(p.mode) ? p.mode : 'normal', amount: num(p.amount, 0.5, 0, 1) };
+  if (type === 'out') return { amount: num(p.amount, 1, 0, 1) };
   return {};
 }
 // повертає справний граф або undefined
@@ -167,7 +168,7 @@ export function repairGraph(cg) {
   for (const n of cg.nodes.slice(0, 40)) {
     if (!isObj(n) || typeof n.id !== 'string' || !NODE_TYPES[n.type] || seen.has(n.id)) continue;
     seen.add(n.id);
-    nodes.push({ id: n.id.slice(0, 24), type: n.type, x: num(n.x, 0, -5000, 5000), y: num(n.y, 0, -5000, 5000), ...(n.off ? { off: true } : {}), ...(MASKABLE.includes(n.type) && fixMask(n.mask) ? { mask: fixMask(n.mask) } : {}), ...(fixKf(n.kf) && n.type !== 'in' && n.type !== 'out' ? { kf: fixKf(n.kf) } : {}), p: fixParams(n.type, n.p) });
+    nodes.push({ id: n.id.slice(0, 24), type: n.type, x: num(n.x, 0, -5000, 5000), y: num(n.y, 0, -5000, 5000), ...(n.off ? { off: true } : {}), ...(MASKABLE.includes(n.type) && fixMask(n.mask) ? { mask: fixMask(n.mask) } : {}), ...(fixKf(n.kf) && n.type !== 'in' ? { kf: fixKf(n.kf) } : {}), p: fixParams(n.type, n.p) });
   }
   if (nodes.filter(n => n.type === 'in').length !== 1 || nodes.filter(n => n.type === 'out').length !== 1) return undefined;
   const ids = new Set(nodes.map(n => n.id)), links = [], used = new Set();
@@ -301,6 +302,7 @@ export function evalPixel(cg, rgb, luts = [], pos = null) {
     const n = cg.nodes.find(x => x.id === id); let r;
     const a = () => { const f = inputOf(cg, id, 0); return f ? ev(f) : evInput(); };
     if (n.type === 'in') r = rgb.slice();
+    else if (n.type === 'out') { const A = a().map(clamp01), k = n.p.amount ?? 1; r = A.map((v, i) => rgb[i] + (v - rgb[i]) * k); }
     else if (n.off || nodeNeutral(n)) r = n.type === 'mix' ? a() : a();
     else if (n.type === 'prim') r = cpuPrim(a(), n.p);
     else if (n.type === 'curves') { const f = curveRGB(n.p); const c = a(); r = c.map((v, i) => f[i](v)); }
@@ -330,7 +332,7 @@ vec3 rgb2hsv(vec3 c){ float mx=max(c.r,max(c.g,c.b)),mn=min(c.r,min(c.g,c.b)),d=
 const FS = {
   in: HEAD + `void main(){ o=vec4(texture(uA,vec2(vUv.x,1.-vUv.y)).rgb,1.); }`,
   copy: HEAD + `void main(){ o=vec4(texture(uA,vUv).rgb,1.); }`,
-  out: HEAD + `uniform float uSplit; void main(){ vec3 c=clamp(texture(uA,vUv).rgb,0.,1.); if(vUv.x<uSplit) c=clamp(texture(uB,vUv).rgb,0.,1.); o=vec4(c,1.); }`,
+  out: HEAD + `uniform float uSplit,uAmt; void main(){ vec3 inp=clamp(texture(uB,vUv).rgb,0.,1.); vec3 c=mix(inp,clamp(texture(uA,vUv).rgb,0.,1.),uAmt); if(vUv.x<uSplit) c=inp; o=vec4(c,1.); }`,
   prim: HEAD + `uniform vec3 uLift,uGamma,uGain,uOff; uniform float uExp,uCon,uSat,uTemp,uTint,uHi,uSh;
 void main(){ vec3 c=texture(uA,vUv).rgb; c*=exp2(uExp); c+=uLift*(1.-c); c*=1.+uGain; c=max(c+uOff,0.);
   c=pow(c,1./max(vec3(.1),1.+uGamma*2.)); c*=vec3(1.+uTemp*.2,1.-uTint*.15,1.-uTemp*.2);
@@ -445,7 +447,8 @@ class GPU {
       setU?.(u, P);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     };
-    const release = id => { const r = (refs.get(id) || 0) - 1; refs.set(id, r); if (r <= 0 && res.get(id)?.own) { res.get(id).own.busy = false; } };
+    // вхід тримаємо до кінця: він потрібен виходу для «До / Після» і загальної сили
+    const release = id => { if (id === inId) return; const r = (refs.get(id) || 0) - 1; refs.set(id, r); if (r <= 0 && res.get(id)?.own) { res.get(id).own.busy = false; } };
     let last = null;
     for (const n of order) {
       const fa = inputOf(cg, n.id, 0), fb = n.type === 'mix' ? inputOf(cg, n.id, 1) : null;
@@ -453,7 +456,7 @@ class GPU {
       const isOut = n.type === 'out';
       let outTex, own = null;
       if (n.type === 'in') { own = this.take(W, H); pass('in', this.src, null, own); outTex = own.t; }
-      else if (isOut) { pass('out', A.tex, res.get(inId).tex, null, u => u('uSplit', opts.split || 0)); outTex = null; }
+      else if (isOut) { pass('out', A.tex, res.get(inId).tex, null, u => { u('uSplit', opts.split || 0); u('uAmt', n.p.amount ?? 1); }); outTex = null; }
       else if (nodeNeutral(n) && !(n.type === 'hsl' && opts.mask === n.id)) { outTex = A.tex; own = null; res.set(n.id, { tex: outTex, own: null }); if (collected) collected.set(n.id, null); continue; }
       else {
         own = this.take(W, H); const p = n.p;
@@ -530,3 +533,15 @@ export const RECIPES = [
   { id: 'teal', name: 'Небо бірюзове', note: 'Вузол HSL змінює лише небо', make: () => chain([mk('prim', 'p1', 200, 40, { con: 1.06, sat: 1.1 }), mk('hsl', 'h1', 380, 40, { hue: 210, width: 70, smin: 0.2, dh: -0.06, ds: 1.4, dl: -0.05 })]) },
 ];
 export function recipeGraph(id) { const r = RECIPES.find(x => x.id === id); return r ? repairGraph(r.make()) : undefined; }
+
+// розкладка вузлів зліва направо за глибиною у графі
+export function tidyGraph(cg, gapX = 200, gapY = 96) {
+  const depth = new Map(), order = graphOrder(cg);
+  for (const n of order) { let d = 0; for (let p = 0; p < NODE_TYPES[n.type].ins; p++) { const f = inputOf(cg, n.id, p); if (f) d = Math.max(d, (depth.get(f) ?? 0) + 1); } depth.set(n.id, d); }
+  const cols = new Map(); for (const n of order) { const d = depth.get(n.id); (cols.get(d) || cols.set(d, []).get(d)).push(n); }
+  const h = Math.max(...[...cols.values()].map(c => c.length)), mid = (h - 1) / 2;
+  for (const [d, list] of cols) list.forEach((n, i) => { n.x = 24 + d * gapX; n.y = Math.round(24 + (mid - (list.length - 1) / 2 + i) * gapY); });
+  // вузли, що не потрапили до виходу, ставимо знизу
+  let k = 0; for (const n of cg.nodes) if (!depth.has(n.id)) { n.x = 24 + (k++) * gapX; n.y = Math.round(24 + (h + 0.3) * gapY); }
+  return cg;
+}

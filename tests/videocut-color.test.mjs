@@ -1,7 +1,7 @@
 // Колірний граф: модель, ремонт, порядок обчислення й математика (еталон на CPU).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scaleGraphKf, splitGraphKf, shiftGraphKf, freezeGraph, kfValue, kfSet, kfRemove, kfAt, kfTimes, animatedGraph, hasKf, getPath, setPath, maskValue, maskDefault, MASKABLE, newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
+import { tidyGraph, scaleGraphKf, splitGraphKf, shiftGraphKf, freezeGraph, kfValue, kfSet, kfRemove, kfAt, kfTimes, animatedGraph, hasKf, getPath, setPath, maskValue, maskDefault, MASKABLE, newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
 
 const close = (a, b, e = 1e-3) => a.every((v, i) => Math.abs(v - b[i]) <= e);
 
@@ -171,4 +171,21 @@ test('ключі руху (kf.js): зсув і масштаб по часу пр
   shiftKf('clip', c, 1); assert.equal(c.kf[0].t, 0); assert.ok(c.kf[0].zoom > 1.1 && c.kf[0].zoom < 1.2, 'значення на новому початку (плавна крива руху) ' + c.kf[0].zoom); assert.equal(c.kf.at(-1).t, 3);
   shiftKf('clip', c, -2); assert.equal(c.kf.at(-1).t, 5);
   scaleKf(c, 0.5); assert.equal(c.kf.at(-1).t, 2.5); scaleKf({ id: 'x' }, 2); assert.ok(!hasKf({ id: 'x' }));
+});
+
+test('загальна сила виходу змішує результат з оригіналом, її можна анімувати', () => {
+  const g = newGraph(); g.nodes[1].p.exp = 1; const out = g.nodes.find(n => n.type === 'out');
+  const full = evalPixel(repairGraph(g), [0.3, 0.3, 0.3])[0]; out.p.amount = 0.5; const half = evalPixel(repairGraph(g), [0.3, 0.3, 0.3])[0]; out.p.amount = 0; const none = evalPixel(repairGraph(g), [0.3, 0.3, 0.3])[0];
+  assert.ok(Math.abs(half - (0.3 + full) / 2) < 1e-6 && Math.abs(none - 0.3) < 1e-6, `${full} ${half} ${none}`);
+  const r = repairGraph({ ...g, nodes: g.nodes.map(n => (n.type === 'out' ? { ...n, p: { amount: 7 }, kf: { 'p.amount': [[0, 1], [2, 0]] } } : n)) }).nodes.find(n => n.type === 'out');
+  assert.equal(r.p.amount, 1); assert.deepEqual(r.kf['p.amount'], [[0, 1], [2, 0]]); assert.ok(Math.abs(animatedGraph(repairGraph({ nodes: [{ id: 'in', type: 'in', p: {} }, { id: 'out', type: 'out', p: { amount: 1 }, kf: { 'p.amount': [[0, 1], [2, 0]] } }], links: [{ from: 'in', to: 'out', port: 0 }] }), 1).nodes[1].p.amount - 0.5) < 1e-9);
+});
+
+test('впорядкування графа: стовпці за глибиною, без накладань, зв\u2019язки йдуть зліва направо', () => {
+  const g = repairGraph(newGraph()); const a = newNode('curves', 5, 5), b = newNode('hsl', 6, 6), m = newNode('mix', 7, 7);
+  g.nodes.push(a, b, m); g.links = [{ from: 'in', to: 'prim1', port: 0 }, { from: 'prim1', to: a.id, port: 0 }, { from: 'prim1', to: b.id, port: 0 }, { from: a.id, to: m.id, port: 0 }, { from: b.id, to: m.id, port: 1 }, { from: m.id, to: 'out', port: 0 }];
+  tidyGraph(g); const by = Object.fromEntries(g.nodes.map(n => [n.id, n]));
+  for (const l of g.links) assert.ok(by[l.from].x < by[l.to].x, `${l.from} → ${l.to}`);
+  for (let i = 0; i < g.nodes.length; i++) for (let j = i + 1; j < g.nodes.length; j++) { const p = g.nodes[i], q = g.nodes[j]; assert.ok(Math.abs(p.x - q.x) >= 150 || Math.abs(p.y - q.y) >= 76, `накладання ${p.id}/${q.id}`); }
+  assert.ok(Math.abs(by[a.id].y - by[b.id].y) >= 76, 'паралельні гілки одна під одною');
 });

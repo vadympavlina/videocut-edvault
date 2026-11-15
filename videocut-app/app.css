@@ -1323,3 +1323,14 @@ body[data-page="color"] .pv-bar .pv-tools{display:none}
 .kf-mark:hover{background:var(--accent-hover)}
 .kf-info{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:88px;text-align:right}
 body[data-page="edit"] .kf-strip{display:none}
+
+/* компактніше на невисоких екранах і вузьких панелях */
+.cg{height:clamp(210px,32vh,320px)}
+.rc-list{grid-template-columns:repeat(auto-fill,minmax(92px,1fr))}
+@media (max-height:820px){
+  .wheels{grid-template-columns:repeat(4,1fr);gap:8px 4px}
+  .wh-ring{width:64px;height:64px}.wheel input[type=range]{width:64px}.wheel{font-size:11px}
+  .wh-ring::before{inset:6px}.wh-puck{width:11px;height:11px;margin:-5.5px 0 0 -5.5px}
+  .clr-insp{padding-top:8px}
+}
+@media (max-width:1100px){.cg-body{grid-template-columns:minmax(0,1fr) 190px}}

@@ -6,7 +6,7 @@ import { parseCube } from './lut.js';
 import {
   COLOR_VIEW, NODE_TYPES, ADDABLE, MIX_MODES, DEFAULTS, RECIPES, newGraph, newNode, repairGraph, recipeGraph, graphOrder, isIdentityGraph,
   nodeNeutral, renderThumbs, curveTable, rgb2hsv, gpuAvailable, MASKABLE, MASK_SHAPES, maskDefault,
-  animatedGraph, kfSet, kfRemove, kfAt, kfTimes, kfValue, getPath, setPath, hasKf,
+  tidyGraph, animatedGraph, kfSet, kfRemove, kfAt, kfTimes, kfValue, getPath, setPath, hasKf,
 } from './color.js';
 import { drawWaveform, drawVector, drawHist, histogram } from './scopes.js';
 
@@ -70,6 +70,7 @@ export function initColorUi() {
       <span class="grow"></span>
       <button class="btn btn-sm" id="cgAdd" aria-haspopup="menu">${icon('plus')}Вузол</button>
  <button class="btn btn-sm" id="cgAll" data-tip="Застосувати граф цього кліпа до всіх кліпів проєкту">До всіх кліпів</button>
+      <button class="btn btn-sm" id="cgTidy" data-tip="Розкласти вузли акуратно зліва направо">Впорядкувати</button>
       <button class="btn btn-sm btn-icon" id="cgFit" data-tip="Показати весь граф" aria-label="Показати весь граф">${icon('fit')}</button>
       <button class="btn btn-sm" id="cgReset" data-tip="Скинути граф кліпа">Скинути</button></div>
     <div class="cg-body"><div class="cg-canvas" id="cgCanvas" tabindex="0" aria-label="Граф вузлів. Стрілки рухають вибраний вузол, Delete видаляє"><div class="cg-world" id="cgWorld"><svg class="cg-wires" id="cgWires" width="4000" height="2400"></svg><div id="cgNodes"></div></div>
@@ -83,6 +84,7 @@ export function initColorUi() {
   wireGraphCanvas(); wireViewControls(); wireKfStrip();
   $('cgAdd').addEventListener('click', e => addMenu(e.currentTarget));
   $('cgFit').addEventListener('click', fitView);
+  $('cgTidy').addEventListener('click', () => { if (!curClip()) return; editGraph(g => tidyGraph(g)); renderGraph(); fitView(); done('вузли впорядковано'); });
   $('cgAll').addEventListener('click', () => {
     const c = curClip(); if (!c || !c.cg || isIdentityGraph(c.cg)) { toast('Спершу налаштуйте колір цього кліпа', 'warn'); return; }
     let n = 0; for (const o of S.project.clips) if (o !== c) { o.cg = JSON.parse(JSON.stringify(c.cg)); n++; }
@@ -117,7 +119,7 @@ const sub = n => {
   const p = n.p;
   switch (n.type) {
     case 'in': return ['Кадр', 'джерело'];
-    case 'out': return ['Результат', 'у перегляд і експорт'];
+    case 'out': return ['Результат', p.amount < 1 ? 'сила ' + Math.round(p.amount * 100) + '%' : 'у перегляд і експорт'];
     case 'prim': { const a = []; if (p.exp) a.push('експ. ' + sgn(p.exp)); if (p.con !== 1) a.push('контраст'); if (p.sat !== 1) a.push('насич.'); if (p.temp) a.push('тепло'); return ['Колеса', a.slice(0, 2).join(', ') || 'без змін']; }
     case 'curves': { const k = ['m', 'r', 'g', 'b'].filter(c => p[c].length > 2 || JSON.stringify(p[c]) !== '[[0,0],[1,1]]'); return ['Криві', k.length ? k.map(c => c.toUpperCase()).join(' ') : 'пряма лінія']; }
     case 'hsl': return ['Колір ' + Math.round(p.hue) + '°', p.inv ? 'усе, крім вибраного' : 'вибраний колір'];
@@ -370,7 +372,11 @@ function renderInspector() {
   selId = n.id;
   const set = path => v => { writeParam(n.id, path, v); touch(); renderGraphLight(n.id); };
   if (n.type === 'in') box.appendChild(h('p', 'hint', 'Вхід — це кадр кліпа до будь-яких змін. Від його кружечка тягніть лінію до першого вузла корекції.'));
-  else if (n.type === 'out') box.appendChild(h('p', 'hint', 'Вихід — це те, що побачить глядач і що потрапить в експорт. Усе, що не з’єднано з виходом, на кадр не впливає.'));
+  else if (n.type === 'out') {
+    const sec = h('div', 'csec', '<div class="csh">Загальна сила</div>'); box.appendChild(sec);
+    sec.appendChild(slider('Сила корекції', valAt(n.id, 'p.amount'), 0, 1, 0.01, pct, set('p.amount'), 1, 'p.amount'));
+    box.appendChild(h('p', 'hint', 'Вихід — це те, що побачить глядач і що потрапить в експорт. Сила корекції змішує результат з оригіналом: 100% — повна дія графа, 50% — наполовину. Корисно, щоб послабити готовий рецепт.'));
+  }
   else if (n.type === 'prim') primInsp(box, n, P, set);
   else if (n.type === 'curves') curvesInsp(box, n, P);
   else if (n.type === 'hsl') hslInsp(box, n, P, set);
@@ -484,7 +490,7 @@ function hslInsp(box, n, P, set) {
 const fmtT = t => { const m = Math.floor(t / 60), x = t - m * 60; return String(m).padStart(2, '0') + ':' + x.toFixed(1).padStart(4, '0'); };
 function wireKfStrip() {
   const strip = $('kfStrip'); if (!strip) return;
-  strip.innerHTML = `<button class="btn btn-sm btn-icon" id="kfPrev" aria-label="Попередній ключовий кадр" data-tip="Попередній ключовий кадр">${icon('chevL')}</button><div class="kf-track" id="kfTrack" role="slider" tabindex="0" aria-label="Позиція в кліпі: клікніть або тягніть"><i class="kf-head"></i></div><button class="btn btn-sm btn-icon" id="kfNext" aria-label="Наступний ключовий кадр" data-tip="Наступний ключовий кадр">${icon('chevR')}</button><span class="kf-info" id="kfInfo"></span>`;
+  strip.innerHTML = `<button class="btn btn-sm btn-icon" id="kfPrev" aria-label="Попередній ключовий кадр" data-tip="Попередній ключовий кадр">${icon('chevL')}</button><div class="kf-track" id="kfTrack" role="slider" tabindex="0" aria-label="Позиція в кліпі: клікніть або тягніть"><i class="kf-head"></i></div><button class="btn btn-sm btn-icon" id="kfNext" aria-label="Наступний ключовий кадр" data-tip="Наступний ключовий кадр">${icon('chevR')}</button>`;
   const track = $('kfTrack'); let drag = false;
   const seekTo = e => { const l = curLayout(); if (!l) return; const r = track.getBoundingClientRect(), f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); seek(l.start + f * (l.end - l.start - 0.001)); };
   track.addEventListener('pointerdown', e => { const mk = e.target.closest('.kf-mark'); if (mk) { const l = curLayout(); if (l) seek(l.start + +mk.dataset.t); e.preventDefault(); return; } drag = true; track.setPointerCapture(e.pointerId); seekTo(e); });

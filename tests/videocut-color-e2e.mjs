@@ -80,6 +80,16 @@ await step('ключові кадри: яскравість росте з час
   assert.ok(r.a < r.b && r.b < r.c, 'зростає: ' + JSON.stringify(r)); const rel = (x, y) => Math.abs(x - y) / y;
   assert.ok(rel(r.b, r.cb) < 0.02 && rel(r.c, r.cc) < 0.02 && rel(r.a, r.ca) < 0.02, 'GPU = CPU: ' + JSON.stringify(r));
 });
+await compare('загальна сила виходу 40% (GPU = CPU)', `C => { const g = C.newGraph(); Object.assign(g.nodes[1].p, { exp: 1, sat: 1.6, temp: 0.4 }); g.nodes.find(n => n.type === 'out').p.amount = 0.4; return g; }`, 6);
+await step('довгий граф: «Вхід» не затирається проміжними кадрами (сила виходу 0% = оригінал, роздільник показує справжній оригінал)', async () => {
+  const r = await page.evaluate(`(() => { ${SET}
+    const g = C.recipeGraph('cinema'); g.nodes.find(n => n.type === 'out').p.amount = 0; const before = Array.from(src); C.applyGraph(ctx, W, H, g, []);
+    const out = ctx.getImageData(0, 0, W, H).data; let worst = 0; for (let i = 0; i < before.length; i++) if (i % 4 !== 3) worst = Math.max(worst, Math.abs(out[i] - before[i]));
+    const g2 = C.recipeGraph('cinema'); ctx.putImageData(img, 0, 0); C.COLOR_VIEW.on = true; C.COLOR_VIEW.split = 0.5; C.applyGraph(ctx, W, H, g2, []); const o2 = ctx.getImageData(0, 0, W, H).data; C.COLOR_VIEW.on = false; C.COLOR_VIEW.split = 0;
+    let wl = 0, diffR = 0; for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; if (x < W / 2 - 1) wl = Math.max(wl, Math.abs(o2[i] - before[i]), Math.abs(o2[i + 1] - before[i + 1])); else if (x > W / 2 + 1) diffR += Math.abs(o2[i] - before[i]); }
+    return { worst, wl, diffR }; })()`);
+  assert.ok(r.worst <= 2, 'сила 0%: кадр як оригінал, відхилення ' + r.worst); assert.ok(r.wl <= 2, 'ліва половина = оригінал: ' + r.wl); assert.ok(r.diffR > 500, 'права половина з корекцією: ' + r.diffR);
+});
 await step('нейтральний граф нічого не змінює й повертає false', async () => {
   const r = await page.evaluate(`(() => { ${SET} const before = Array.from(src); const ok = C.applyGraph(ctx, W, H, C.newGraph(), []); const out = ctx.getImageData(0, 0, W, H).data; return { ok, same: before.every((v, i) => v === out[i]) }; })()`);
   assert.equal(r.ok, false); assert.ok(r.same);

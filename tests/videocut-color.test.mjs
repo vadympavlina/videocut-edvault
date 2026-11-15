@@ -1,7 +1,7 @@
 // Колірний граф: модель, ремонт, порядок обчислення й математика (еталон на CPU).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { kfValue, kfSet, kfRemove, kfAt, kfTimes, animatedGraph, hasKf, getPath, setPath, maskValue, maskDefault, MASKABLE, newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
+import { splitGraphKf, shiftGraphKf, freezeGraph, kfValue, kfSet, kfRemove, kfAt, kfTimes, animatedGraph, hasKf, getPath, setPath, maskValue, maskDefault, MASKABLE, newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
 
 const close = (a, b, e = 1e-3) => a.every((v, i) => Math.abs(v - b[i]) <= e);
 
@@ -110,7 +110,7 @@ test('ключові кадри: плавний перехід, утриманн
   const n = newNode('prim'); kfSet(n, 'p.exp', 0, 0); kfSet(n, 'p.exp', 4, 2);
   const k = n.kf['p.exp'];
   assert.equal(kfValue(k, -1), 0); assert.equal(kfValue(k, 9), 2); assert.ok(Math.abs(kfValue(k, 2) - 1) < 1e-9, 'посередині — половина');
-  assert.ok(kfValue(k, 1) < 0.5 && kfValue(k, 3) > 1.5, 'плавний вхід і вихід');
+  assert.ok(Math.abs(kfValue(k, 1) - 0.5) < 1e-9 && Math.abs(kfValue(k, 3) - 1.5) < 1e-9, 'лінійний перехід');
   kfSet(n, 'p.exp', 4.01, 3); assert.equal(n.kf['p.exp'].length, 2, 'ключ поруч замінюється, а не дублюється'); assert.equal(n.kf['p.exp'][1][1], 3);
   assert.ok(kfAt(n, 'p.exp', 0.02) && !kfAt(n, 'p.exp', 2)); assert.deepEqual(kfTimes(n), [0, 4]);
   kfRemove(n, 'p.exp', 0); kfRemove(n, 'p.exp', 4); assert.equal(n.kf, undefined, 'без ключів поле зникає');
@@ -133,4 +133,24 @@ test('repairGraph чистить ключі й анімація маски пр�
   const a = animatedGraph({ ...repairGraph(g) }, 1.5); assert.ok(a.nodes[1].mask.x > 0.4 && a.nodes[1].mask.x < 0.6);
   const gi = newGraph(); gi.nodes[0].kf = { 'p.exp': [[0, 1]] }; assert.equal(repairGraph(gi).nodes[0].kf, undefined, 'на вході ключів немає');
   assert.equal(getPath({ a: { b: 2 } }, 'a.b'), 2); const o = { a: { b: 1 } }; assert.ok(setPath(o, 'a.b', 5) && o.a.b === 5 && !setPath(o, 'a.z', 1));
+});
+
+test('розріз кліпа: ключі діляться, значення на межі однакове, безперервність у часі', () => {
+  const a = newGraph(); kfSet(a.nodes[1], 'p.exp', 0, 0); kfSet(a.nodes[1], 'p.exp', 4, 1.5);
+  const b = JSON.parse(JSON.stringify(a)); const mid = kfValue(a.nodes[1].kf['p.exp'], 2);
+  const orig = animatedGraph(a, 3.1).nodes[1].p.exp, origEarly = animatedGraph(a, 1).nodes[1].p.exp;
+  splitGraphKf(a, b, 2);
+  assert.deepEqual(a.nodes[1].kf['p.exp'], [[0, 0], [2, mid]]); assert.deepEqual(b.nodes[1].kf['p.exp'], [[0, mid], [2, 1.5]]);
+  assert.ok(Math.abs(animatedGraph(b, 3.1 - 2).nodes[1].p.exp - orig) < 1e-9, 'права половина: значення на 3,1 с точно таке саме');
+  assert.ok(Math.abs(animatedGraph(a, 1).nodes[1].p.exp - origEarly) < 1e-9, 'ліва половина: на 1 с точно таке саме');
+  assert.ok(Math.abs(animatedGraph(a, 2).nodes[1].p.exp - animatedGraph(b, 0).nodes[1].p.exp) < 1e-9, 'на межі значення збігається');
+  const none = newGraph(); const copy = JSON.parse(JSON.stringify(none)); splitGraphKf(none, copy, 1); assert.equal(none.nodes[1].kf, undefined); splitGraphKf(undefined, copy, 1);
+});
+
+test('відрізаний початок: ключі зсуваються, стоп-кадр дає статичний граф', () => {
+  const g = newGraph(); kfSet(g.nodes[1], 'p.exp', 0, 0); kfSet(g.nodes[1], 'p.exp', 4, 2);
+  const before = animatedGraph(g, 3).nodes[1].p.exp; shiftGraphKf(g, 1);
+  assert.equal(g.nodes[1].kf['p.exp'][0][0], 0); assert.ok(Math.abs(animatedGraph(g, 3 - 1).nodes[1].p.exp - before) < 1e-9, 'значення у ту саму мить збереглося');
+  assert.equal(g.nodes[1].kf['p.exp'].at(-1)[0], 3);
+  const f = freezeGraph(g, 1); assert.equal(f.nodes[1].kf, undefined); assert.ok(Math.abs(f.nodes[1].p.exp - animatedGraph(g, 1).nodes[1].p.exp) < 1e-9); assert.equal(freezeGraph(undefined, 1), undefined);
 });

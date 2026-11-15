@@ -166,6 +166,56 @@ await step('анімація потрапляє в експорт: перший 
   const lumAt = t => { const r = spawnSync('ffmpeg', ['-v', 'error', '-ss', String(t), '-i', f, '-frames:v', '1', '-vf', 'scale=8:8', '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], { encoding: 'buffer', maxBuffer: 1e6 }); const d = r.stdout; return d && d.length ? d.reduce((a, b) => a + b, 0) / d.length : NaN; };
   const a = lumAt(0.2), z = lumAt(4.6); assert.ok(z > a + 25, `у файлі яскравість росте: ${a} → ${z}`);
 });
+const lumAtT = async t => { await p.evaluate(tt => window.VideoCut.seek(tt), t); await p.waitForTimeout(500); const m = await mean(); return m[0] + m[1] + m[2]; };
+const setAnim = () => p.evaluate(() => { const g = window.VideoCut.S.project.clips[0].cg; const n = g.nodes.find(q => q.type === 'prim'); n.kf = { 'p.exp': [[0, -1], [5, 1.2]] }; window.VideoCut.commit('тест'); });
+await step('розріз кліпа з анімацією кольору: до і після розрізу кадр у кожну мить однаковий, скасування повертає один кліп', async () => {
+  await p.click('#cgReset'); await settle(); await setAnim(); await settle();
+  const times = [0.6, 1.8, 2.7, 4.2], before = []; for (const t of times) before.push(await lumAtT(t));
+  await p.evaluate(async () => { (await import('/videocut-app/js/ops.js')).splitAt(2.2); }); await settle();
+  assert.equal(await p.evaluate(() => window.VideoCut.S.project.clips.length), 2, 'два кліпи');
+  for (let i = 0; i < times.length; i++) { const now = await lumAtT(times[i]); assert.ok(Math.abs(now - before[i]) < 14, `t=${times[i]}: ${before[i].toFixed(1)} → ${now.toFixed(1)}`); }
+  const k = await p.evaluate(() => window.VideoCut.S.project.clips.map(c => c.cg.nodes.find(q => q.type === 'prim').kf['p.exp'].map(x => x.map(v => +v.toFixed(2)))));
+  assert.equal(k[0].at(-1)[0] > 2 && k[0].at(-1)[0] < 2.4, true, 'ліва половина закінчується в точці розрізу: ' + JSON.stringify(k)); assert.equal(k[1][0][0], 0, 'права починається з нуля');
+  await undo(); await settle(); assert.equal(await p.evaluate(() => window.VideoCut.S.project.clips.length), 1, 'скасування склеїло кліп');
+  const kk = await p.evaluate(() => window.VideoCut.S.project.clips[0].cg.nodes.find(q => q.type === 'prim').kf['p.exp']); assert.equal(kk.length, 2, 'ключі відновлено');
+});
+await step('вирізання діапазону: кадр після вирізаного шматка має той самий колір, що й був у цей момент', async () => {
+  const at = await lumAtT(4.2);
+  await p.evaluate(async () => { (await import('/videocut-app/js/ops.js')).cutRanges([[1, 3]]); }); await settle();
+  assert.equal(await p.evaluate(() => window.VideoCut.S.project.clips.length), 2);
+  const now = await lumAtT(4.2 - 2); assert.ok(Math.abs(now - at) < 14, `після вирізання: ${at.toFixed(1)} → ${now.toFixed(1)}`);
+  await undo(); await settle(); assert.equal(await p.evaluate(() => window.VideoCut.S.project.clips.length), 1);
+});
+await step('дублювання, копіювання й вставка кліпа переносять граф разом з ключами; стоп-кадр бере значення на цю мить', async () => {
+  const r = await p.evaluate(async () => {
+    const ops = await import('/videocut-app/js/ops.js'), st = await import('/videocut-app/js/state.js');
+    const c0 = st.S.project.clips[0]; st.select('clip', c0.id); ops.duplicateSel();
+    const dup = st.S.project.clips; const ok1 = dup.length === 2 && JSON.stringify(dup[1].cg.nodes.find(q => q.type === 'prim').kf) === JSON.stringify(dup[0].cg.nodes.find(q => q.type === 'prim').kf) && dup[1].id !== dup[0].id;
+    st.select('clip', dup[1].id); ops.copySel(false); ops.pasteClip(); const ok2 = st.S.project.clips.length === 3 && !!st.S.project.clips[2].cg?.nodes.find(q => q.type === 'prim').kf;
+    return { ok1, ok2, n: st.S.project.clips.length };
+  });
+  assert.ok(r.ok1 && r.ok2, JSON.stringify(r)); await undo(); await undo(); await settle();
+  const n = await p.evaluate(() => window.VideoCut.S.project.clips.length); assert.equal(n, 1, 'скасування прибрало копії: ' + n);
+});
+await step('стоп-кадр: нове фото отримує статичний колір на цю мить, обидві половини розрізаного кліпа зберігають анімацію', async () => {
+  await p.click('#cgReset'); await settle(); await setAnim(); await settle(); await p.evaluate(() => window.VideoCut.seek(2.5)); await settle();
+  const ok = await p.evaluate(async () => { const ops = await import('/videocut-app/js/ops.js'); return await ops.freezeFrame(2); });
+  assert.ok(ok, 'стоп-кадр створено'); await settle();
+  const r = await p.evaluate(async () => { const { kfValue } = await import('/videocut-app/js/color.js'); const cl = window.VideoCut.S.project.clips; const photo = cl.find(c => !c.cg?.nodes.some(n => n.kf)); const parts = cl.filter(c => c.cg?.nodes.some(n => n.kf));
+    return { n: cl.length, photoExp: photo?.cg?.nodes.find(q => q.type === 'prim').p.exp, parts: parts.length, expected: kfValue([[0, -1], [5, 1.2]], 2.5) }; });
+  assert.equal(r.n, 3, 'три кліпи: початок, стоп-кадр, кінець: ' + JSON.stringify(r)); assert.ok(Math.abs(r.photoExp - r.expected) < 0.02, `статичне значення ${r.photoExp} ≈ ${r.expected}`); assert.equal(r.parts, 2, 'обидві половини зберегли анімацію');
+  await undo(); await settle(); assert.equal(await p.evaluate(() => window.VideoCut.S.project.clips.length), 1, 'скасування повернуло один кліп');
+});
+await step('файл проєкту (.evproj) і відновлення зберігають граф з ключами й масками', async () => {
+  const ok = await p.evaluate(async () => {
+    const st = await import('/videocut-app/js/state.js'), pf = await import('/videocut-app/js/projfile.js');
+    const g = st.S.project.clips[0].cg, n = g.nodes.find(q => q.type === 'prim'); n.mask = { type: 'ellipse', x: 0.3, y: 0.4, w: 0.5, h: 0.4, rot: 10, soft: 0.3, inv: false }; n.kf['mask.x'] = [[0, 0.2], [4, 0.8]];
+    const blob = pf.packProject(), back = await pf.unpackProject(new File([blob], 'a.evproj')), fixed = st.repairProject(back.project);
+    const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort()) : x));
+    return canon(fixed.clips[0].cg) === canon(st.repairProject(JSON.parse(JSON.stringify(st.S.project))).clips[0].cg) && !!fixed.clips[0].cg.nodes.find(q => q.type === 'prim').kf['mask.x'];
+  });
+  assert.ok(ok, 'граф збігається після запакування й розпакування');
+});
 await step('граф переживає ремонт проєкту (збереження й відкриття)', async () => {
   const r = await p.evaluate(async () => { const { repairProject } = await import('/videocut-app/js/state.js'); const a = window.VideoCut.S.project, b = repairProject(JSON.parse(JSON.stringify(a))); const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort()) : x)); return { same: canon(a.clips[0].cg) === canon(b.clips[0].cg), n: b.clips[0].cg.nodes.length, kf: !!b.clips[0].cg.nodes.find(q => q.kf) }; });
   assert.ok(r.same && r.n >= 3 && r.kf, JSON.stringify(r));
@@ -179,6 +229,13 @@ await step('експорт містить корекцію й не містит�
   let spread = 0, left = 0, right = 0; for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const i = (y * 16 + x) * 3, d = Math.max(px[i], px[i + 1], px[i + 2]) - Math.min(px[i], px[i + 1], px[i + 2]); spread = Math.max(spread, d); (x < 8 ? (left += d) : (right += d)); }
   assert.ok(spread < 14, 'кадр чорно-білий (різниця між каналами ≤ 14): ' + spread); assert.ok(Math.abs(left - right) < 64, 'ліва половина така сама, як права: ' + left + ' / ' + right);
   await p.click('#clrBA');
+});
+await step('відтворення з важким графом (ретро: зерно, віньєтка, сяйво) не зависає й не дає помилок', async () => {
+  await p.evaluate(() => window.VideoCut.seek(0)); await p.locator('#rcList .rc', { hasText: 'Ретро' }).click(); await settle();
+  await p.evaluate(() => { const g = window.VideoCut.S.project.clips[0].cg; const f = g.nodes.find(n => n.type === 'fx'); if (f) f.p.glow = 0.6; });
+  await p.click('#btnPlay'); await p.waitForTimeout(1800); const t1 = await p.evaluate(() => window.VideoCut.S.t); await p.click('#btnPlay'); await settle();
+  assert.ok(t1 > 1.0, 'час іде під час відтворення: ' + t1);
+  assert.equal(await p.locator('#cgNodes .cn').count() >= 4, true, 'граф на місці'); await p.click('#cgReset'); await settle();
 });
 await step('Alt+1 повертає на «Монтаж»: бібліотека й таймлайн на місці, експорт не зачеплено', async () => {
   await p.keyboard.press('Alt+1'); await settle();

@@ -1,5 +1,6 @@
 // Операції редагування — кожна змінює проєкт і записує крок в історію.
 import { splitKf } from './kf.js';
+import { splitGraphKf, shiftGraphKf, freezeGraph } from './color.js';
 import { S, media, uid, emit, layout, clipAt, srcTime, clipDur, musicDur, mainEnd, duration, commit, select, selectMany, findSel, rippleShift, outputSize, ASPECTS, laneOf, laneLocked } from './state.js';
 import { applyLayout } from './layer.js';
 import { CC_PRESETS, capStyle } from './cc.js';
@@ -75,7 +76,7 @@ export function splitAt(t = S.t) {
   const b = { ...structuredClone(c), id: uid('c'), in: st, fadeIn: 0 };
   delete b.tr; // розріз — без переходу
   c.out = st; c.fadeOut = 0;
-  splitKf('clip', c, b, t - l.start);
+  splitKf('clip', c, b, t - l.start); splitGraphKf(c.cg, b.cg, t - l.start);
   p.clips.splice(p.clips.indexOf(c) + 1, 0, b);
   commit();
   emit('did-cut');
@@ -139,7 +140,7 @@ function cutRangeRaw(a, b) {
     const c = l.clip, sp = c.speed || 1;
     if (l.end <= a || l.start >= b) { out.push(c); continue; }
     if (l.start < a) out.push({ ...structuredClone(c), out: c.in + (a - l.start) * sp, fadeOut: 0 });
-    if (l.end > b) out.push({ ...structuredClone(c), id: l.start < a ? uid('c') : c.id, in: c.in + (b - l.start) * sp, fadeIn: 0, tr: l.start < a ? undefined : c.tr });
+    if (l.end > b) { const q = { ...structuredClone(c), id: l.start < a ? uid('c') : c.id, in: c.in + (b - l.start) * sp, fadeIn: 0, tr: l.start < a ? undefined : c.tr }; shiftGraphKf(q.cg, b - l.start); out.push(q); }
   }
   p.clips = out;
   rippleShift(a, -(b - a));
@@ -406,13 +407,13 @@ export async function freezeFrame(dur = 3) {
   const fm = await addMedia(blob, 'Стоп-кадр.jpg');
   const p = S.project, t = S.t;
   const idx = p.clips.indexOf(c);
-  const fc = { ...newClip(fm), out: dur, fit: c.fit, rot: c.rot, flip: c.flip, look: c.look, bri: c.bri, con: c.con, sat: c.sat, zoom: c.zoom, zx: c.zx, zy: c.zy, motion: 'none' };
+  const fc = { ...newClip(fm), out: dur, fit: c.fit, rot: c.rot, flip: c.flip, look: c.look, bri: c.bri, con: c.con, sat: c.sat, zoom: c.zoom, zx: c.zx, zy: c.zy, motion: 'none', ...(c.lut ? { lut: c.lut } : {}), ...(c.cg ? { cg: freezeGraph(c.cg, t - l.start) } : {}) };
   if (t <= l.start + 0.05) p.clips.splice(idx, 0, fc);
   else if (t >= l.end - 0.05) p.clips.splice(idx + 1, 0, fc);
   else {
     const st = srcTime(l, t);
     const b = { ...structuredClone(c), id: uid('c'), in: st, fadeIn: 0 }; delete b.tr;
-    c.out = st; c.fadeOut = 0;
+    c.out = st; c.fadeOut = 0; splitGraphKf(c.cg, b.cg, t - l.start);
     p.clips.splice(idx + 1, 0, fc, b);
   }
   rippleShift(t, dur);

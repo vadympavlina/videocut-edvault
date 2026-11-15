@@ -60,7 +60,7 @@ export function maskValue(m, u, v, aspect = 16 / 9) {
 }
 
 /* ═════════ ключові кадри параметрів ═════════
-   node.kf = { 'p.exp': [[t, v], …], 'mask.x': […] }, t — секунди від початку кліпа. Між ключами плавний перехід, поза ними значення тримається. */
+   node.kf = { 'p.exp': [[t, v], …], 'mask.x': […] }, t — секунди від початку кліпа. Між ключами значення змінюється лінійно (тому розріз і обрізання кліпа нічого не псують), поза ними тримається. */
 const KF_PATH = /^(p|mask)(\.[a-zA-Z0-9]+){1,2}$/;
 export const getPath = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
 export function setPath(o, path, v) { const ks = path.split('.'), last = ks.pop(); let a = o; for (const k of ks) { if (a[k] == null) return false; a = a[k]; } if (a[last] === undefined) return false; a[last] = v; return true; }
@@ -69,7 +69,7 @@ export function kfValue(keys, t) {
   if (!keys.length) return undefined;
   if (t <= keys[0][0]) return keys[0][1]; if (t >= keys[keys.length - 1][0]) return keys[keys.length - 1][1];
   let i = 0; while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
-  const [t0, v0] = keys[i], [t1, v1] = keys[i + 1], u = sstep(t0, t1, t); return v0 + (v1 - v0) * u;
+  const [t0, v0] = keys[i], [t1, v1] = keys[i + 1]; return v0 + (v1 - v0) * ((t - t0) / ((t1 - t0) || 1e-6));  // лінійно: розріз і обрізання кліпа не змінюють форму переходу
 }
 export function kfSet(n, path, t, v) {
   const keys = ((n.kf ||= {})[path] ||= []); const i = keys.findIndex(k => Math.abs(k[0] - t) < 0.04);
@@ -91,6 +91,28 @@ export function animatedGraph(cg, t) {
     for (const [path, keys] of Object.entries(n.kf)) { const v = kfValue(keys, t); if (v !== undefined) setPath(m, path, v); }
     return m;
   }) };
+}
+// розріз кліпа: ключі графа діляться між половинами (b — копія a); на межі з'являється ключ зі значенням у точці розрізу
+export function splitGraphKf(a, b, cut) {
+  if (!a || !b) return;
+  a.nodes.forEach((na, i) => {
+    const nb = b.nodes[i]; if (!hasKf(na) || !nb) return;
+    for (const [path, keys] of Object.entries(na.kf)) {
+      const v = kfValue(keys, cut);
+      na.kf[path] = [...keys.filter(k => k[0] < cut - 0.02), [cut, v]];
+      nb.kf = nb.kf || {}; nb.kf[path] = [[0, v], ...keys.filter(k => k[0] > cut + 0.02).map(k => [k[0] - cut, k[1]])];
+    }
+  });
+}
+// початок кліпа відрізано на dt секунд: ключі зсуваються, значення на новому початку зберігається
+export function shiftGraphKf(cg, dt) {
+  if (!cg) return;
+  for (const n of cg.nodes) if (hasKf(n)) for (const [path, keys] of Object.entries(n.kf)) { const v = kfValue(keys, dt); n.kf[path] = [[0, v], ...keys.filter(k => k[0] > dt + 0.02).map(k => [k[0] - dt, k[1]])]; }
+}
+// статичний граф зі значеннями на момент t (для стоп-кадру)
+export function freezeGraph(cg, t) {
+  if (!cg) return undefined;
+  const g = JSON.parse(JSON.stringify(animatedGraph(cg, t))); for (const n of g.nodes) delete n.kf; return g;
 }
 function fixKf(kf) {
   if (!isObj(kf)) return undefined; const out = {};

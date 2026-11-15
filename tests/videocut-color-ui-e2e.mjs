@@ -237,6 +237,25 @@ await step('відтворення з важким графом (ретро: з�
   assert.ok(t1 > 1.0, 'час іде під час відтворення: ' + t1);
   assert.equal(await p.locator('#cgNodes .cn').count() >= 4, true, 'граф на місці'); await p.click('#cgReset'); await settle();
 });
+await step('обрізання лівого краю кліпа на таймлайні зсуває ключі: анімація лишається на тому самому місці вмісту', async () => {
+  await p.click('#pageSw [data-page=edit]'); await settle(); await p.click('#cgReset').catch(() => {});
+  await p.evaluate(() => { const c = window.VideoCut.S.project.clips[0]; c.cg = { v: 1, nodes: [{ id: 'in', type: 'in', x: 0, y: 0, p: {} }, { id: 'prim1', type: 'prim', x: 200, y: 0, p: { lift: { x: 0, y: 0, l: 0 }, gamma: { x: 0, y: 0, l: 0 }, gain: { x: 0, y: 0, l: 0 }, offset: { x: 0, y: 0, l: 0 }, exp: 0, con: 1, sat: 1, temp: 0, tint: 0, hi: 0, sh: 0 }, kf: { 'p.exp': [[0, -1], [5, 1.2]] } }, { id: 'out', type: 'out', x: 400, y: 0, p: {} }], links: [{ from: 'in', to: 'prim1', port: 0 }, { from: 'prim1', to: 'out', port: 0 }] }; window.VideoCut.commit('тест'); });
+  await settle(); const h = await p.locator('.it.clip .h-l').first().boundingBox();
+  await p.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await p.mouse.down(); await p.mouse.move(h.x + 60, h.y + h.height / 2, { steps: 6 }); await p.mouse.move(h.x + 120, h.y + h.height / 2, { steps: 6 }); await p.mouse.up(); await settle();
+  const r = await p.evaluate(() => { const c = window.VideoCut.S.project.clips[0]; return { in: c.in, keys: c.cg.nodes.find(n => n.type === 'prim').kf['p.exp'] }; });
+  assert.ok(r.in > 0.3, 'кліп обрізано зліва: ' + r.in); const k = r.keys;
+  assert.ok(Math.abs(k[0][1] - (-1 + 2.2 * r.in / 5)) < 0.02, `нове значення на початку ${k[0][1]} відповідає місцю обрізання ${r.in}`);
+  assert.ok(Math.abs(k.at(-1)[0] - (5 - r.in)) < 0.02, 'останній ключ зсунувся на ту саму величину: ' + JSON.stringify(k));
+  await undo(); await settle(); const back = await p.evaluate(() => window.VideoCut.S.project.clips[0].cg.nodes.find(n => n.type === 'prim').kf['p.exp']); assert.deepEqual(back, [[0, -1], [5, 1.2]], 'скасування повертає ключі');
+});
+await step('зміна швидкості кліпа масштабує ключі в часі', async () => {
+  await p.locator('.it.clip').first().click(); await settle();
+  await p.locator('#inspector').getByText('Час', { exact: true }).first().click(); await settle();
+  await p.locator('#inspector').getByRole('button', { name: '2×', exact: true }).first().click(); await settle();
+  const r = await p.evaluate(() => { const c = window.VideoCut.S.project.clips[0]; return { sp: c.speed, keys: c.cg.nodes.find(n => n.type === 'prim').kf['p.exp'] }; });
+  assert.equal(r.sp, 2); assert.ok(Math.abs(r.keys.at(-1)[0] - 2.5) < 0.02 && r.keys[0][0] === 0, 'ключі вдвічі ближче: ' + JSON.stringify(r.keys));
+  await undo(); await settle();
+});
 await step('Alt+1 повертає на «Монтаж»: бібліотека й таймлайн на місці, експорт не зачеплено', async () => {
   await p.keyboard.press('Alt+1'); await settle();
   assert.equal(await p.evaluate(() => document.body.dataset.page), 'edit');

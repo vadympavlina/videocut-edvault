@@ -1,7 +1,7 @@
 // Колірний граф: модель, ремонт, порядок обчислення й математика (еталон на CPU).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitGraphKf, shiftGraphKf, freezeGraph, kfValue, kfSet, kfRemove, kfAt, kfTimes, animatedGraph, hasKf, getPath, setPath, maskValue, maskDefault, MASKABLE, newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
+import { scaleGraphKf, splitGraphKf, shiftGraphKf, freezeGraph, kfValue, kfSet, kfRemove, kfAt, kfTimes, animatedGraph, hasKf, getPath, setPath, maskValue, maskDefault, MASKABLE, newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
 
 const close = (a, b, e = 1e-3) => a.every((v, i) => Math.abs(v - b[i]) <= e);
 
@@ -153,4 +153,22 @@ test('відрізаний початок: ключі зсуваються, ст
   assert.equal(g.nodes[1].kf['p.exp'][0][0], 0); assert.ok(Math.abs(animatedGraph(g, 3 - 1).nodes[1].p.exp - before) < 1e-9, 'значення у ту саму мить збереглося');
   assert.equal(g.nodes[1].kf['p.exp'].at(-1)[0], 3);
   const f = freezeGraph(g, 1); assert.equal(f.nodes[1].kf, undefined); assert.ok(Math.abs(f.nodes[1].p.exp - animatedGraph(g, 1).nodes[1].p.exp) < 1e-9); assert.equal(freezeGraph(undefined, 1), undefined);
+});
+
+test('наростили початок (dt < 0) і змінили швидкість: ключі лишаються на тому самому вмісті', () => {
+  const g = newGraph(); kfSet(g.nodes[1], 'p.exp', 1, 0.5); kfSet(g.nodes[1], 'p.exp', 3, 1.5);
+  const at = animatedGraph(g, 2).nodes[1].p.exp; shiftGraphKf(g, -1);
+  assert.deepEqual(g.nodes[1].kf['p.exp'], [[2, 0.5], [4, 1.5]], 'ключі посунулись пізніше'); assert.ok(Math.abs(animatedGraph(g, 3).nodes[1].p.exp - at) < 1e-9, 'у ту саму мить вмісту те саме значення');
+  const h = newGraph(); kfSet(h.nodes[1], 'p.exp', 0, 0); kfSet(h.nodes[1], 'p.exp', 4, 2); const c0 = animatedGraph(h, 3).nodes[1].p.exp;
+  scaleGraphKf(h, 0.5); assert.deepEqual(h.nodes[1].kf['p.exp'].map(k => k[0]), [0, 2], 'швидкість ×2: ключі вдвічі ближче');
+  assert.ok(Math.abs(animatedGraph(h, 3 * 0.5).nodes[1].p.exp - c0) < 1e-9, 'значення на тому самому місці вмісту');
+  scaleGraphKf(h, 1); scaleGraphKf(h, NaN); scaleGraphKf(undefined, 2); assert.deepEqual(h.nodes[1].kf['p.exp'].map(k => k[0]), [0, 2]);
+});
+
+test('ключі руху (kf.js): зсув і масштаб по часу при обрізанні та зміні швидкості', async () => {
+  const { shiftKf, scaleKf, hasKf } = await import('../videocut-app/js/kf.js');
+  const c = { id: 'c', kf: [{ t: 0, zoom: 1 }, { t: 4, zoom: 2 }] };
+  shiftKf('clip', c, 1); assert.equal(c.kf[0].t, 0); assert.ok(c.kf[0].zoom > 1.1 && c.kf[0].zoom < 1.2, 'значення на новому початку (плавна крива руху) ' + c.kf[0].zoom); assert.equal(c.kf.at(-1).t, 3);
+  shiftKf('clip', c, -2); assert.equal(c.kf.at(-1).t, 5);
+  scaleKf(c, 0.5); assert.equal(c.kf.at(-1).t, 2.5); scaleKf({ id: 'x' }, 2); assert.ok(!hasKf({ id: 'x' }));
 });

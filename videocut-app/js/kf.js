@@ -61,6 +61,15 @@ export function autoKey(kind, o) { if (hasKf(o)) setKeyHere(kind, o); }
 // щоб рамка, повзунки й перетягування показували значення на курсорі, а не старі
 export function syncBase(kind, o) { if (hasKf(o)) Object.assign(o, kfAt(o.kf, localTime(kind, o), kfProps(kind, o))); }
 
+// початок кліпа змінено на dt секунд: ключі руху зсуваються разом із вмістом
+export function shiftKf(kind, o, dt) {
+  if (!hasKf(o) || !dt) return;
+  const props = kfProps(kind, o);
+  o.kf = dt > 0 ? [{ t: 0, ...kfAt(o.kf, dt, props) }, ...o.kf.filter(k => k.t > dt + 0.02).map(k => ({ ...k, t: k.t - dt }))] : o.kf.map(k => ({ ...k, t: k.t - dt }));
+}
+// швидкість кліпа змінилась: час ключів множимо на f (стара швидкість / нова)
+export function scaleKf(o, f) { if (hasKf(o) && Number.isFinite(f) && f > 0 && Math.abs(f - 1) > 1e-6) o.kf = o.kf.map(k => ({ ...k, t: +(k.t * f).toFixed(4) })); }
+
 export function repairKf(o) {
   if (!Array.isArray(o.kf)) { delete o.kf; return; }
   o.kf = o.kf.filter(k => k && Number.isFinite(k.t)).map(k => ({ ...k, t: Math.max(0, k.t) })).sort((a, b) => a.t - b.t);

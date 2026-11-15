@@ -104,10 +104,17 @@ export function splitGraphKf(a, b, cut) {
     }
   });
 }
-// початок кліпа відрізано на dt секунд: ключі зсуваються, значення на новому початку зберігається
+// початок кліпа змінено на dt секунд (dt > 0 — відрізано, dt < 0 — наростили): ключі зсуваються, анімація лишається прив'язаною до вмісту
 export function shiftGraphKf(cg, dt) {
-  if (!cg) return;
-  for (const n of cg.nodes) if (hasKf(n)) for (const [path, keys] of Object.entries(n.kf)) { const v = kfValue(keys, dt); n.kf[path] = [[0, v], ...keys.filter(k => k[0] > dt + 0.02).map(k => [k[0] - dt, k[1]])]; }
+  if (!cg || !dt) return;
+  for (const n of cg.nodes) if (hasKf(n)) for (const [path, keys] of Object.entries(n.kf)) {
+    n.kf[path] = dt > 0 ? [[0, kfValue(keys, dt)], ...keys.filter(k => k[0] > dt + 0.02).map(k => [k[0] - dt, k[1]])] : keys.map(k => [k[0] - dt, k[1]]);
+  }
+}
+// швидкість кліпа змінилась: тривалість обернено пропорційна, тож час ключів множимо на f = стара швидкість / нова
+export function scaleGraphKf(cg, f) {
+  if (!cg || !Number.isFinite(f) || Math.abs(f - 1) < 1e-6 || f <= 0) return;
+  for (const n of cg.nodes) if (hasKf(n)) for (const keys of Object.values(n.kf)) for (const k of keys) k[0] = +(k[0] * f).toFixed(4);
 }
 // статичний граф зі значеннями на момент t (для стоп-кадру)
 export function freezeGraph(cg, t) {

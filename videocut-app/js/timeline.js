@@ -5,6 +5,8 @@ import { thumbAt, PEAKS_RATE } from './media.js';
 import { isLayer } from './layer.js';
 import { addToTimeline, addLayerAt, addMarker, removeMarker, renameMarker } from './ops.js';
 import { seek } from './player.js';
+import { shiftGraphKf } from './color.js';
+import { shiftKf } from './kf.js';
 import { $, esc, icon, clamp, fmt, setHtml, paintRange } from './ui.js';
 
 const BASE = { ROW: 26, CC_H: 28, V_H: 58, V2_H: 44, A_H: 40 }, RULER_H = 22, BAR_H = 44;
@@ -755,6 +757,7 @@ function moveClip(P, dt, e) {
   }
   // решта таймлайну (текст, субтитри) зсувається разом із вмістом кліпу
   const delta = clipDur(c) - clipDur(orig);
+  if (drag.mode === 'l') { const cut = clipDur(orig) - clipDur(c); shiftGraphKf(c.cg, cut); shiftKf('clip', c, cut); } // анімація лишається на тому самому місці вмісту
   if (drag.mode === 'l') rippleShift(L0[idx].s, delta);
   else rippleShift(oldEnd + Math.min(0, delta), delta);
   return `Тривалість ${fmt(clipDur(c), true)}${delta ? ` (${delta > 0 ? '+' : '−'}${Math.abs(delta).toFixed(1).replace('.', ',')} с)` : ''}`;
@@ -770,6 +773,7 @@ function rollEdit(P, idx, dt) {
   const maxL = Math.min((oa.out - oa.in - 0.1 * sa) / sa, ob.in / sb);
   const d = clamp(dt, -maxL, maxR);
   a.out = oa.out + d * sa; b.in = ob.in + d * sb;
+  shiftGraphKf(b.cg, (b.in - ob.in) / sb); shiftKf('clip', b, (b.in - ob.in) / sb);
   const L = layoutOf(P.clips);
   return `Стик ${fmt(L[left].e, true)} · ${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(2).replace('.', ',')} с`;
 }

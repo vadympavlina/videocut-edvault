@@ -9,6 +9,8 @@ import { analyze as analyzeStab } from './stab.js';
 import { reverseRange, REVERSE_MAX } from './reverse.js';
 import { addMedia } from './media.js';
 import { DENOISE_LEVELS } from './denoise.js';
+import { scaleGraphKf } from './color.js';
+import { scaleKf } from './kf.js';
 import { hasKf, keyHere, setKeyHere, removeKeyHere, autoKey, syncBase, localTime, itemLength } from './kf.js';
 import { parseSubtitles } from './srt.js';
 import { renderCapTab, markActiveCaption, capTabClick, capTabInput, capTabChange, capTabToggle, captionInspector, ccAction, speedHtml } from './cc-panel.js';
@@ -764,8 +766,8 @@ function onClick(e) {
     if (f === 'speed') {
       // зміна швидкості змінює довжину кліпу — зсуваємо все далі
       const l = layout().find(x => x.clip.id === o.id);
-      const before = clipDur(o);
-      o.speed = v;
+      const before = clipDur(o), oldSp = o.speed || 1;
+      o.speed = v; scaleGraphKf(o.cg, oldSp / v); scaleKf(o, oldSp / v); // ключі лишаються на тих самих місцях вмісту
       const delta = clipDur(o) - before;
       rippleShift(l.end + Math.min(0, delta), delta);
       commit();

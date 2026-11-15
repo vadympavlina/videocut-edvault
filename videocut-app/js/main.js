@@ -17,6 +17,7 @@ import { initScreenRec, startScreenRec, canScreenRec, isScreenRecording } from '
 import { DB, takeHandoff } from './db.js';
 import { packProject, unpackProject, PROJ_EXT } from './projfile.js';
 import { initDock } from './dock.js';
+import { initColorUi } from './color-ui.js';
 import { initHistoryUi, openHistory } from './history-ui.js';
 import { initA11y } from './a11y.js';
 import { initView } from './viewctl.js';
@@ -466,6 +467,7 @@ window.addEventListener('unhandledrejection', e => onErr(e.reason));
 })();
 
 initDock();
+initColorUi();
 initHistoryUi();
 initScreenRec(file => importFiles([file]));
 {

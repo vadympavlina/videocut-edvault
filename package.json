@@ -13,7 +13,8 @@
     "audit:perf": "node scripts/audit/perf.mjs",
     "audit:keyboard": "node scripts/audit/keyboard.mjs",
     "audit:stress": "node scripts/audit/stress.mjs",
-    "test:scenarios": "node tests/videocut-scenarios-e2e.mjs"
+    "test:scenarios": "node tests/videocut-scenarios-e2e.mjs",
+    "test:color": "node tests/videocut-color-e2e.mjs && node tests/videocut-color-ui-e2e.mjs"
   },
   "devDependencies": {
     "axe-core": "^4.14.0",

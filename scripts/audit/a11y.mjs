@@ -23,6 +23,10 @@ await scan('порожній редактор');
 await p.setInputFiles('#fileInput', vid); await p.waitForFunction(() => window.VideoCut.S.project.clips.length > 0); await p.waitForTimeout(1500); await scan('з відео');
 await p.evaluate(() => window.VideoCut.seek(2)); await p.click('.tl-lanes .clip', { timeout: 3000 }).catch(() => {}); await p.waitForTimeout(500); await scan('виділений кліп');
 for (const t of ['text', 'elements', 'captions']) { await p.click(`[data-tab="${t}"]`); await p.waitForTimeout(400); await scan('вкладка ' + t); }
+await p.click('#pageSw [data-page=color]'); await p.waitForTimeout(1500); await scan('сторінка «Колір»');
+await p.locator('#rcList .rc').first().click(); await p.waitForTimeout(700); await scan('«Колір»: рецепт застосовано');
+await p.click('#cgAdd'); await p.getByRole('menuitem', { name: 'Криві' }).click(); await p.waitForTimeout(500); await scan('«Колір»: криві');
+await p.click('#pageSw [data-page=edit]'); await p.waitForTimeout(500);
 await p.keyboard.press('Control+e'); await p.waitForTimeout(500); await scan('вікно експорту'); await p.keyboard.press('Escape'); await p.waitForTimeout(300);
 await p.click('#menubar button').catch(() => {}); await p.waitForTimeout(300); await scan('меню');
 const rows = [...agg.values()].sort((a, b) => ({ critical: 0, serious: 1, moderate: 2, minor: 3 }[a.impact] - { critical: 0, serious: 1, moderate: 2, minor: 3 }[b.impact]) || b.n - a.n);

@@ -236,7 +236,7 @@ vec3 rgb2hsv(vec3 c){ float mx=max(c.r,max(c.g,c.b)),mn=min(c.r,min(c.g,c.b)),d=
 const FS = {
   in: HEAD + `void main(){ o=vec4(texture(uA,vec2(vUv.x,1.-vUv.y)).rgb,1.); }`,
   copy: HEAD + `void main(){ o=vec4(texture(uA,vUv).rgb,1.); }`,
-  out: HEAD + `void main(){ o=vec4(clamp(texture(uA,vUv).rgb,0.,1.),1.); }`,
+  out: HEAD + `uniform float uSplit; void main(){ vec3 c=clamp(texture(uA,vUv).rgb,0.,1.); if(vUv.x<uSplit) c=clamp(texture(uB,vUv).rgb,0.,1.); o=vec4(c,1.); }`,
   prim: HEAD + `uniform vec3 uLift,uGamma,uGain,uOff; uniform float uExp,uCon,uSat,uTemp,uTint,uHi,uSh;
 void main(){ vec3 c=texture(uA,vUv).rgb; c*=exp2(uExp); c+=uLift*(1.-c); c*=1.+uGain; c=max(c+uOff,0.);
   c=pow(c,1./max(vec3(.1),1.+uGamma*2.)); c*=vec3(1.+uTemp*.2,1.-uTint*.15,1.-uTemp*.2);
@@ -351,7 +351,7 @@ class GPU {
       const isOut = n.type === 'out';
       let outTex, own = null;
       if (n.type === 'in') { own = this.take(W, H); pass('in', this.src, null, own); outTex = own.t; }
-      else if (isOut) { pass('out', A.tex, null, null); outTex = null; }
+      else if (isOut) { pass('out', A.tex, res.get(inId).tex, null, u => u('uSplit', opts.split || 0)); outTex = null; }
       else if (nodeNeutral(n) && !(n.type === 'hsl' && opts.mask === n.id)) { outTex = A.tex; own = null; res.set(n.id, { tex: outTex, own: null }); if (collected) collected.set(n.id, null); continue; }
       else {
         own = this.take(W, H); const p = n.p;
@@ -366,6 +366,7 @@ class GPU {
       }
       res.set(n.id, { tex: outTex, own });
       if (collected && !isOut) collected.set(n.id, this.read(own, W, H));
+      if (collected && isOut) collected.set('__out', null);
       if (fa) release(fa); if (fb) release(fb);
       if (!isOut) last = n.id;
     }
@@ -385,9 +386,14 @@ export const gpuAvailable = () => MAIN.init();
 
 // застосовує граф до всього вмісту ctx.canvas (перегляд і експорт)
 let frameNo = 0;
+// Стан вікна «Колір» лише для перегляду: роздільник «До / Після», показ маски HSL, вимкнення корекції. В експорті не діє.
+export const COLOR_VIEW = { on: false, split: 0, mask: null, bypass: false };
 export function applyGraph(ctx, W, H, cg, luts = [], opts = {}) {
-  if (!cg || isIdentityGraph(cg)) return false;
-  const ok = MAIN.run(ctx.canvas, cg, W, H, luts, { seed: (++frameNo % 1000) * 0.137, ...opts });
+  const v = !opts.export && COLOR_VIEW.on ? COLOR_VIEW : null;
+  if (!cg || v?.bypass) return false;
+  const mask = v?.mask && cg.nodes.some(n => n.id === v.mask) ? v.mask : null, split = v?.split || 0;
+  if (isIdentityGraph(cg) && !mask) return false;
+  const ok = MAIN.run(ctx.canvas, cg, W, H, luts, { seed: (++frameNo % 1000) * 0.137, mask, split });
   if (!ok) return false;
   ctx.save(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'copy'; ctx.drawImage(MAIN.cv, 0, 0, W, H); ctx.restore();
   return true;

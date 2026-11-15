@@ -21,6 +21,8 @@
 <link rel="modulepreload" href="videocut-app/js/cc-panel.js">
 <link rel="modulepreload" href="videocut-app/js/cc.js">
 <link rel="modulepreload" href="videocut-app/js/chroma.js">
+<link rel="modulepreload" href="videocut-app/js/color-ui.js">
+<link rel="modulepreload" href="videocut-app/js/color.js">
 <link rel="modulepreload" href="videocut-app/js/convert.js">
 <link rel="modulepreload" href="videocut-app/js/ctxmenu.js">
 <link rel="modulepreload" href="videocut-app/js/db.js">
@@ -44,6 +46,7 @@
 <link rel="modulepreload" href="videocut-app/js/proxy.js">
 <link rel="modulepreload" href="videocut-app/js/render.js">
 <link rel="modulepreload" href="videocut-app/js/reverse.js">
+<link rel="modulepreload" href="videocut-app/js/scopes.js">
 <link rel="modulepreload" href="videocut-app/js/screenrec.js">
 <link rel="modulepreload" href="videocut-app/js/silences.js">
 <link rel="modulepreload" href="videocut-app/js/srt.js">
@@ -79,6 +82,7 @@
   <img class="vc-logo" src="icons/videocut.svg" alt="">
   <nav class="menubar" id="menubar" aria-label="Меню"></nav>
   <div class="grow"></div>
+  <div class="page-sw" id="pageSw" role="tablist" aria-label="Розділ редактора"><button role="tab" data-page="edit" class="on" aria-selected="true" data-tip="Монтаж" data-key="Alt+1">Монтаж</button><button role="tab" data-page="color" aria-selected="false" data-tip="Колір: вузли, колеса, криві" data-key="Alt+2">Колір</button></div>
   <button type="button" class="proj" id="btnProj" data-tip="Параметри проєкту: назва, формат кадру"><span class="brand-proj" id="projName">Новий проєкт</span><span class="save-state" id="saveState"></span></button>
   <div class="grow"></div>
   <button class="btn btn-icon btn-sm" id="btnUndo" data-tip="Скасувати" data-key="Ctrl+Z" disabled><span data-icon="undo"></span></button>
@@ -102,7 +106,8 @@
   <main class="center">
     <div class="stage" id="stage">
       <div class="stage-scroll" id="stageScroll"><div class="pv-wrap" id="pvWrap"><canvas id="pv"></canvas>
-      <div class="pv-guides" id="pvGuides" hidden><i class="g-third"></i><i class="g-act"></i><i class="g-title"></i></div><div class="pv-layer" id="pvLayer"></div></div></div>
+      <div class="pv-guides" id="pvGuides" hidden><i class="g-third"></i><i class="g-act"></i><i class="g-title"></i></div><div class="pv-layer" id="pvLayer"></div><div class="clr-split" id="clrSplit" hidden><i></i></div></div></div>
+      <div class="clr-view" id="clrView" hidden></div><aside class="scopes" id="scopes" aria-label="Осцилографи" hidden></aside>
       <div class="rec-count" id="recCount" hidden></div>
       <div class="rec-badge" id="recBadge" hidden><i></i><b id="recTime">00:00</b><span>Іде запис</span><button class="btn btn-sm" id="btnRecStop"><span data-icon="stop"></span>Стоп</button></div>
       <button class="btn btn-icon btn-sm stage-full" id="btnFull" data-tip="На весь екран" data-key="F"><span data-icon="full"></span></button>
@@ -136,6 +141,7 @@
   </main>
 
   <aside class="insp" id="inspector" aria-label="Властивості"></aside>
+  <aside class="insp clr-insp" id="clrInsp" aria-label="Колір вибраного вузла" hidden></aside>
   <div class="vsplit" id="vsLib" aria-hidden="true" data-aria-valuenow="300"></div>
   <div class="vsplit" id="vsInsp" aria-hidden="true"></div>
 </div>
@@ -173,6 +179,8 @@
     </div>
   </div>
 </section>
+
+<section class="cg" id="cgPanel" aria-label="Колірний граф" hidden></section>
 
 <footer class="statusbar" id="statusBar" aria-label="Рядок стану"><span id="sbFmt"></span><span id="sbClips"></span><span class="grow"></span><span id="sbSnap"></span></footer>
 

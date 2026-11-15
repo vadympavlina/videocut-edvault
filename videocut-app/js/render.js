@@ -336,11 +336,11 @@ function drawFitted(ctx, c, f, W, H, prog = 0) {
   if (filt !== 'none') ctx.filter = 'none';
   applyLookOverlay(ctx, c, W, H);
 }
-export function drawClipFrame(ctx, l, f, W, H, t) {
+export function drawClipFrame(ctx, l, f, W, H, t, opts = {}) {
   const c = resolveKf('clip', l.clip, t - l.start);
   drawFitted(ctx, c, f, W, H, (t - l.start) / Math.max(0.01, l.end - l.start));
   if (c.lut && S.project.luts) { const lut = S.project.luts.find(x => x.id === c.lut.id); if (lut) applyLut(ctx, W, H, lut, c.lut.mix ?? 1); }
-  if (c.cg) applyGraph(ctx, W, H, c.cg, S.project.luts || []);
+  if (c.cg && !opts.colorBypass) applyGraph(ctx, W, H, c.cg, S.project.luts || [], { export: !!(opts.export || opts.colorFinal) });
   const a = 1 - fadeAlpha(t, l.start, l.end - l.start, c.fadeIn || 0, c.fadeOut || 0);
   if (a > 0.001) { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0, 0, W, H); }
 }
@@ -361,7 +361,7 @@ export function renderScene(ctx, W, H, t, provider, L = layout(), opts = {}) {
       const tail = (opts.tailOf || tailFrame)(prev.clip);
       const pf = tail ? { src: tail, w: tail.naturalWidth || tail.width, h: tail.naturalHeight || tail.height } : null;
       drawTransition(ctx, tr, smooth(clamp01((t - l.start) / (tr.d || 0.6))), prev, pf, l, f, W, H, t);
-    } else if (f && f.w && f.h) drawClipFrame(ctx, l, f, W, H, t);
+    } else if (f && f.w && f.h) drawClipFrame(ctx, l, f, W, H, t, opts);
   }
   for (const o of p.overlays) {
     if (t < o.start || t >= o.start + o.dur) continue;

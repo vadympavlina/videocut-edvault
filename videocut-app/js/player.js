@@ -327,8 +327,15 @@ function syncElements(hard, L = layout()) {
 export async function snapshot() {
   const { W, H } = outputSize();
   const c = document.createElement('canvas'); c.width = W; c.height = H;
-  renderScene(c.getContext('2d'), W, H, S.t, previewProvider, undefined, { ovFrame: ovProvider });
+  renderScene(c.getContext('2d'), W, H, S.t, previewProvider, undefined, { ovFrame: ovProvider, colorFinal: true });
   return new Promise(r => c.toBlob(r, 'image/png'));
 }
 
+// кадр без колірного графа (для мініатюр вузлів, рецептів і піпетки), задана ширина
+export function renderRaw(w) {
+  const { W, H } = outputSize(), k = w / W, cw = Math.max(2, Math.round(W * k)), ch = Math.max(2, Math.round(H * k));
+  const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+  renderScene(c.getContext('2d'), cw, ch, S.t, previewProvider, undefined, { ovFrame: ovProvider, colorBypass: true });
+  return c;
+}
 export const previewCanvas = () => canvas;

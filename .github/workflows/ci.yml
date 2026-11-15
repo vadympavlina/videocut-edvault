@@ -25,5 +25,7 @@ jobs:
           npm run test:e2e
       - name: Сценарії (додавання файлів, групове перетягування, панелі, експорт, збереження)
         run: VC_SKIP="кожна кнопка" npm run test:scenarios
+      - name: Колір (GPU проти CPU і сторінка «Колір»)
+        run: npm run test:color
       - name: Аудити (доступність, швидкість, стрес)
         run: npm run audit:a11y && npm run audit:keyboard && npm run audit:perf && npm run audit:stress

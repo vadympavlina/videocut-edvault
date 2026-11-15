@@ -1,6 +1,7 @@
 // Малювання кадру сцени — однаково для перегляду й експорту.
 import { resolveKf, hasKf } from './kf.js';
 import { applyLut } from './lut.js';
+import { applyGraph } from './color.js';
 import { stabAt } from './stab.js';
 // provider(layoutItem, sourceTime) → {src: CanvasImageSource | VideoSample, w, h} | null
 import { S, media, layout, clipAt, srcTime, laneVisible } from './state.js';
@@ -339,6 +340,7 @@ export function drawClipFrame(ctx, l, f, W, H, t) {
   const c = resolveKf('clip', l.clip, t - l.start);
   drawFitted(ctx, c, f, W, H, (t - l.start) / Math.max(0.01, l.end - l.start));
   if (c.lut && S.project.luts) { const lut = S.project.luts.find(x => x.id === c.lut.id); if (lut) applyLut(ctx, W, H, lut, c.lut.mix ?? 1); }
+  if (c.cg) applyGraph(ctx, W, H, c.cg, S.project.luts || []);
   const a = 1 - fadeAlpha(t, l.start, l.end - l.start, c.fadeIn || 0, c.fadeOut || 0);
   if (a > 0.001) { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0, 0, W, H); }
 }

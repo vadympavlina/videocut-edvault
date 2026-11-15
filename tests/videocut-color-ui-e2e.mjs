@@ -1,8 +1,8 @@
 // Сторінка «Колір» у редакторі: колеса, повзунки, вузли, з'єднання, криві, HSL, рецепти, До/Після, скасування.
 //   node tests/videocut-color-ui-e2e.mjs      (потрібні Playwright, Chromium і ffmpeg)
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { readFile, mkdtemp } from 'node:fs/promises';
+import { readFile, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, extname, resolve } from 'node:path';
 import assert from 'node:assert/strict';
@@ -118,6 +118,16 @@ await step('вузол HSL: маска показується чорно-біл�
 await step('граф переживає ремонт проєкту (збереження й відкриття)', async () => {
   const r = await p.evaluate(async () => { const { repairProject } = await import('/videocut-app/js/state.js'); const a = window.VideoCut.S.project, b = repairProject(JSON.parse(JSON.stringify(a))); return { same: JSON.stringify(a.clips[0].cg) === JSON.stringify(b.clips[0].cg), n: b.clips[0].cg.nodes.length }; });
   assert.ok(r.same && r.n >= 4, JSON.stringify(r));
+});
+await step('експорт містить корекцію й не містить «До / Після»: чорно-біле всюди, навіть під роздільником', async () => {
+  await p.click('#clrBA'); await p.locator('#rcList .rc', { hasText: 'Нуар' }).click(); await settle();
+  const b64 = await p.evaluate(async () => { const blob = await window.VideoCut.exportVideo({ format: 'webm', quality: 'low', short: 360 }); const buf = new Uint8Array(await blob.arrayBuffer()); let s = ''; for (let i = 0; i < buf.length; i += 32768) s += String.fromCharCode(...buf.subarray(i, i + 32768)); return btoa(s); });
+  const f = join(tmp, 'out.webm'); await writeFile(f, Buffer.from(b64, 'base64'));
+  const r = spawnSync('ffmpeg', ['-v', 'error', '-ss', '1', '-i', f, '-frames:v', '1', '-vf', 'scale=16:16', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { encoding: 'buffer', maxBuffer: 1e6 });
+  const px = r.stdout; assert.ok(px && px.length >= 16 * 16 * 3, 'кадр з експорту прочитано');
+  let spread = 0, left = 0, right = 0; for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const i = (y * 16 + x) * 3, d = Math.max(px[i], px[i + 1], px[i + 2]) - Math.min(px[i], px[i + 1], px[i + 2]); spread = Math.max(spread, d); (x < 8 ? (left += d) : (right += d)); }
+  assert.ok(spread < 14, 'кадр чорно-білий (різниця між каналами ≤ 14): ' + spread); assert.ok(Math.abs(left - right) < 64, 'ліва половина така сама, як права: ' + left + ' / ' + right);
+  await p.click('#clrBA');
 });
 await step('Alt+1 повертає на «Монтаж»: бібліотека й таймлайн на місці, експорт не зачеплено', async () => {
   await p.keyboard.press('Alt+1'); await settle();

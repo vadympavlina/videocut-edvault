@@ -1296,3 +1296,11 @@ body[data-page="color"] .pv-bar .pv-tools{display:none}
 @media (max-width:1100px){body[data-page="color"] .work{grid-template-columns:minmax(0,1fr) 300px}.cg-body{grid-template-columns:minmax(0,1fr) 200px}body[data-page="color"] .stage-scroll{right:0}.scopes{display:none}}
 @media (max-width:760px){.page-sw{display:none}}
 @media (prefers-reduced-motion:reduce){.cn,.cn-port{transition:none}}
+
+.clr-mask{position:absolute;pointer-events:none;z-index:4;overflow:visible}
+.clr-mask .mk{position:absolute;pointer-events:auto;cursor:move;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.6),inset 0 0 0 1px rgba(0,0,0,.35);outline:none;touch-action:none}
+.clr-mask .mk.ellipse{border-radius:50%}.clr-mask .mk:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.clr-mask .mk.linear{border-width:2px 0;border-style:dashed}
+.clr-mask .mk-h{position:absolute;right:-8px;bottom:-8px;width:14px;height:14px;border-radius:4px;background:#fff;border:2px solid var(--accent);cursor:nwse-resize;pointer-events:auto;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.clr-mask .mk.ellipse .mk-h{right:calc(14.6% - 8px);bottom:calc(14.6% - 8px)}
+.crow.auto{grid-template-columns:1fr;margin:0 0 10px}

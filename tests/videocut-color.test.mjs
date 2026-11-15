@@ -1,7 +1,7 @@
 // Колірний граф: модель, ремонт, порядок обчислення й математика (еталон на CPU).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
+import { maskValue, maskDefault, MASKABLE, newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
 
 const close = (a, b, e = 1e-3) => a.every((v, i) => Math.abs(v - b[i]) <= e);
 
@@ -83,4 +83,25 @@ test('рецепти: усі коректні, не нейтральні й зм
 
 test('hsv ↔ rgb перетворюється туди й назад', () => {
   for (const c of [[0.2, 0.5, 0.9], [0.9, 0.1, 0.1], [0.3, 0.3, 0.3], [0, 1, 0.5]]) { const [h, s, v] = rgb2hsv(...c); assert.ok(close(hsv2rgb(h, s, v), c, 1e-6)); }
+});
+
+test('маска: форми, м\u2019якість, інверсія й ремонт', () => {
+  const m = { ...maskDefault(), type: 'ellipse', x: 0.5, y: 0.5, w: 0.4, h: 0.4, soft: 0.2 };
+  assert.ok(maskValue(m, 0.5, 0.5) > 0.99 && maskValue(m, 0.02, 0.02) < 0.01);
+  assert.ok(maskValue({ ...m, inv: true }, 0.5, 0.5) < 0.01);
+  const lin = { ...maskDefault(), type: 'linear', y: 0.5, h: 0.4, soft: 0.3 };
+  assert.ok(maskValue(lin, 0.5, 0.1) > 0.9 && maskValue(lin, 0.5, 0.9) < 0.1, 'градієнт: зверху повна дія, знизу немає');
+  const rect = { ...maskDefault(), type: 'rect', w: 0.3, h: 0.3, soft: 0.1 };
+  assert.ok(maskValue(rect, 0.5, 0.5) > 0.99 && maskValue(rect, 0.8, 0.5) < 0.01);
+  const g = newGraph(); g.nodes[1].p.exp = 1; g.nodes[1].mask = { type: 'ellipse', x: 'a', w: 99, soft: -3 };
+  const r = repairGraph(g).nodes[1].mask; assert.equal(r.type, 'ellipse'); assert.ok(r.w <= 2 && r.soft >= 0 && r.x === 0.5);
+  g.nodes[1].mask = { type: 'нема' }; assert.equal(repairGraph(g).nodes[1].mask, undefined);
+  const g2 = newGraph(); g2.nodes[0].mask = maskDefault(); assert.equal(repairGraph(g2).nodes[0].mask, undefined, 'на вході маски немає');
+  assert.ok(MASKABLE.includes('prim') && !MASKABLE.includes('mix'));
+});
+
+test('evalPixel: маска обмежує дію вузла', () => {
+  const g = newGraph(); g.nodes[1].p.exp = 1; g.nodes[1].mask = { ...maskDefault(), type: 'ellipse', x: 0.5, y: 0.5, w: 0.3, h: 0.3, soft: 0.1 };
+  const r = repairGraph(g), pos = (u, v) => ({ u, v, aspect: 1.5 });
+  assert.ok(evalPixel(r, [0.3, 0.3, 0.3], [], pos(0.5, 0.5))[0] > 0.55 && Math.abs(evalPixel(r, [0.3, 0.3, 0.3], [], pos(0.05, 0.05))[0] - 0.3) < 0.01);
 });

@@ -5,7 +5,7 @@ import { $, icon, toast, paintRanges } from './ui.js';
 import { parseCube } from './lut.js';
 import {
   COLOR_VIEW, NODE_TYPES, ADDABLE, MIX_MODES, DEFAULTS, RECIPES, newGraph, newNode, repairGraph, recipeGraph, graphOrder, isIdentityGraph,
-  nodeNeutral, renderThumbs, curveTable, rgb2hsv, gpuAvailable,
+  nodeNeutral, renderThumbs, curveTable, rgb2hsv, gpuAvailable, MASKABLE, MASK_SHAPES, maskDefault,
 } from './color.js';
 import { drawWaveform, drawVector, drawHist, histogram } from './scopes.js';
 
@@ -46,7 +46,7 @@ export function setPage(p) {
   $('inspector').hidden = p === 'color';
   if (p === 'color') { if (!curClip()) seek(0); if (!nodeOf(st.sel)) st.sel = (curGraph() || newGraph()).nodes.find(n => n.type === 'prim')?.id || 'in'; renderAll(); }
   requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
-  requestDraw(); queueScopes();
+  requestDraw(); queueScopes(); updateMaskOverlay();
 }
 
 /* ═════════ каркас ═════════ */
@@ -59,6 +59,7 @@ export function initColorUi() {
     <div class="cg-head"><b class="cg-title">Граф кліпа</b><div class="cg-clips" id="cgClips" role="tablist" aria-label="Кліпи"></div>
       <span class="grow"></span>
       <button class="btn btn-sm" id="cgAdd" aria-haspopup="menu">${icon('plus')}Вузол</button>
+ <button class="btn btn-sm" id="cgAll" data-tip="Застосувати граф цього кліпа до всіх кліпів проєкту">До всіх кліпів</button>
       <button class="btn btn-sm btn-icon" id="cgFit" data-tip="Показати весь граф" aria-label="Показати весь граф">${icon('fit')}</button>
       <button class="btn btn-sm" id="cgReset" data-tip="Скинути граф кліпа">Скинути</button></div>
     <div class="cg-body"><div class="cg-canvas" id="cgCanvas" tabindex="0" aria-label="Граф вузлів. Стрілки рухають вибраний вузол, Delete видаляє"><div class="cg-world" id="cgWorld"><svg class="cg-wires" id="cgWires" width="4000" height="2400"></svg><div id="cgNodes"></div></div>
@@ -72,6 +73,11 @@ export function initColorUi() {
   wireGraphCanvas(); wireViewControls();
   $('cgAdd').addEventListener('click', e => addMenu(e.currentTarget));
   $('cgFit').addEventListener('click', fitView);
+  $('cgAll').addEventListener('click', () => {
+    const c = curClip(); if (!c || !c.cg || isIdentityGraph(c.cg)) { toast('Спершу налаштуйте колір цього кліпа', 'warn'); return; }
+    let n = 0; for (const o of S.project.clips) if (o !== c) { o.cg = JSON.parse(JSON.stringify(c.cg)); n++; }
+    if (!n) { toast('Інших кліпів немає'); return; } renderStrip(); requestDraw(); done('граф застосовано до всіх кліпів'); toast(`Колір застосовано до ${n} ${n === 1 ? 'кліпа' : 'кліпів'}`, 'ok');
+  });
   $('cgReset').addEventListener('click', () => { if (!curClip()) return; editGraph((g, c) => { c.cg = newGraph(); }); st.sel = 'prim1'; touch(true); renderInspector(); done('граф скинуто'); });
   root.scopes.addEventListener('click', e => { const b = e.target.closest('[data-sc]'); if (!b) return; st.scope = b.dataset.sc; for (const x of root.scopes.querySelectorAll('[data-sc]')) { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); } queueScopes(); });
   on('time', () => { if (st.page === 'color') { onClipMaybeChanged(); queueScopes(); queueRecipeThumbs(); } });
@@ -154,7 +160,7 @@ function fitView() {
   const k = Math.max(0.4, Math.min(1.2, Math.min((cv.width - 60) / (x1 - x0), (cv.height - 50) / (y1 - y0))));
   st.view = { k, x: (cv.width - (x1 - x0) * k) / 2 - x0 * k, y: (cv.height - (y1 - y0) * k) / 2 - y0 * k }; applyView();
 }
-function selectNode(id) { st.sel = id; st.selLink = null; for (const d of $('cgNodes').children) d.classList?.toggle('sel', d.dataset?.id === id); drawWires(); renderInspector(); if (nodeOf(id)?.type !== 'hsl') { COLOR_VIEW.mask = null; $('clrView')?.classList.remove('mask-on'); requestDraw(); } }
+function selectNode(id) { st.sel = id; st.selLink = null; setTimeout(updateMaskOverlay, 0); for (const d of $('cgNodes').children) d.classList?.toggle('sel', d.dataset?.id === id); drawWires(); renderInspector(); if (nodeOf(id)?.type !== 'hsl') { COLOR_VIEW.mask = null; $('clrView')?.classList.remove('mask-on'); requestDraw(); } }
 
 function wireGraphCanvas() {
   const cv = $('cgCanvas');
@@ -357,7 +363,8 @@ function renderInspector() {
   else if (n.type === 'lut') lutInsp(box, n, P, set);
   else if (n.type === 'fx') fxInsp(box, n, set);
   else if (n.type === 'mix') mixInsp(box, n, P, set);
-  paintRanges(box);
+  if (MASKABLE.includes(n.type)) maskInsp(box, n);
+  paintRanges(box); updateMaskOverlay();
 }
 // оновлюємо лише підпис вузла (без повної перебудови, щоб не збивати перетягування)
 function renderGraphLight(id) { const n = nodeOf(id), d = $('cgNodes')?.querySelector(`[data-id="${id}"]`); if (!n || !d) return; const [a, b] = sub(n); d.querySelector('.cn-t span').textContent = a; d.querySelector('.cn-t small').textContent = b; d.classList.toggle('idle', nodeNeutral(n) && !n.off); }
@@ -393,6 +400,7 @@ function wheel(title, get, setW, tip) {
 }
 function primInsp(box, n, P, set) {
   const wset = key => w => { editGraph(() => { Object.assign((nodeOf(n.id) || n).p[key], w); }); touch(); renderGraphLight(n.id); };
+  const auto = h('div', 'crow auto'); auto.innerHTML = `<button class="btn btn-sm btn-block" data-tip="Підбирає яскравість, контраст і баланс білого за поточним кадром">${icon('wand')}Авто-корекція кадру</button>`; auto.querySelector('button').addEventListener('click', () => autoFix(n)); box.appendChild(auto);
   const ws = h('div', 'wheels');
   const defs = [['lift', 'Тіні', 'Колір і яскравість найтемніших ділянок'], ['gamma', 'Півтони', 'Середні тони: більшість кадру'], ['gain', 'Світла', 'Найяскравіші ділянки'], ['offset', 'Зсув', 'Підсвічує увесь кадр одним кольором']];
   for (const [k, t, tip] of defs) ws.appendChild(wheel(t, () => P()[k], wset(k), tip));
@@ -412,14 +420,14 @@ function fxInsp(box, n, set) {
 }
 function mixInsp(box, n, P, set) {
   const sec = h('div', 'csec', '<div class="csh">Змішування двох гілок</div>'); box.appendChild(sec);
-  const sel = h('div', 'crow sel'); sel.innerHTML = `<label>Режим</label><select class="input">${Object.entries(MIX_MODES).map(([k, v]) => `<option value="${k}"${P().mode === k ? ' selected' : ''}>${v}</option>`).join('')}</select>`;
+  const sel = h('div', 'crow sel'); sel.innerHTML = `<label>Режим</label><select class="input" aria-label="Режим змішування">${Object.entries(MIX_MODES).map(([k, v]) => `<option value="${k}"${P().mode === k ? ' selected' : ''}>${v}</option>`).join('')}</select>`;
   sel.querySelector('select').addEventListener('change', e => { editGraph(() => { (nodeOf(n.id) || n).p.mode = e.target.value; }); touch(); renderGraph(); done('режим змішування'); }); sec.appendChild(sel);
   sec.appendChild(slider('Сила', P().amount, 0, 1, 0.01, pct, set((p, v) => { p.amount = v; }), 0.5));
   box.appendChild(h('p', 'hint', 'Верхній вхід — основа, нижній — шар, який накладається. Зʼєднайте дві гілки з цим вузлом і оберіть режим, наприклад «Екран» для світіння.'));
 }
 function lutInsp(box, n, P, set) {
   const sec = h('div', 'csec', '<div class="csh">Кольорова схема (LUT)</div>'); box.appendChild(sec);
-  const list = luts(), r = h('div', 'crow sel'); r.innerHTML = `<label>Схема</label><select class="input"><option value="">Не вибрано</option>${list.map(l => `<option value="${esc(l.id)}"${P().lut === l.id ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select>`;
+  const list = luts(), r = h('div', 'crow sel'); r.innerHTML = `<label>Схема</label><select class="input" aria-label="Кольорова схема LUT"><option value="">Не вибрано</option>${list.map(l => `<option value="${esc(l.id)}"${P().lut === l.id ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select>`;
   r.querySelector('select').addEventListener('change', e => { editGraph(() => { (nodeOf(n.id) || n).p.lut = e.target.value || null; }); touch(); renderGraphLight(n.id); done('LUT'); }); sec.appendChild(r);
   sec.appendChild(slider('Сила', P().mix, 0, 1, 0.01, pct, set((p, v) => { p.mix = v; }), 1));
   const up = h('div', 'crow'); up.innerHTML = `<button class="btn btn-sm btn-block">${icon('upload')}Додати файл .cube</button><input type="file" accept=".cube" hidden>`; const fi = up.querySelector('input');
@@ -444,6 +452,63 @@ function hslInsp(box, n, P, set) {
   A_('Зсув відтінку', 'dh', -180, 180, 1, sgn, 0); A_('Насиченість', 'ds', 0, 3, 0.01, pct, 1); A_('Яскравість', 'dl', -1, 1, 0.01, v => sgn(v * 100), 0); A_('Сила дії', 'amount', 0, 1, 0.01, pct, 1);
   box.appendChild(h('p', 'hint', `Піпетка над кадром (кнопка ${'«Піпетка»'}) сама заповнить виділення за кольором, на який ви натиснете.`));
 }
+
+/* ═════════ авто-корекція ═════════ */
+function autoFix(n) {
+  const src = raw(160), g = src.getContext('2d', { willReadFrequently: true }), d = g.getImageData(0, 0, src.width, src.height).data, N = d.length / 4;
+  const ys = new Float32Array(N); let mr = 0, mg = 0, mb = 0, sat = 0;
+  for (let i = 0; i < N; i++) { const r = d[i * 4] / 255, gg = d[i * 4 + 1] / 255, b = d[i * 4 + 2] / 255; mr += r; mg += gg; mb += b; ys[i] = 0.2126 * r + 0.7152 * gg + 0.0722 * b; sat += rgb2hsv(r, gg, b)[1]; }
+  mr /= N; mg /= N; mb /= N; sat /= N; const sorted = Float32Array.from(ys).sort(), lo = sorted[Math.floor(N * 0.03)], hi = sorted[Math.floor(N * 0.97)], mean = ys.reduce((a, b) => a + b, 0) / N;
+  const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+  const patch = { exp: r2(clampN(Math.log2(0.42 / Math.max(0.04, mean)) * 0.8, -1.5, 1.5)), con: r2(clampN(0.88 / Math.max(0.2, hi - lo), 0.9, 1.35)), temp: r2(clampN((mb - mr) / Math.max(0.05, mb + mr) * 2.2, -0.5, 0.5)), sat: r2(sat < 0.3 ? 1.12 : 1) };
+  editGraph(() => { Object.assign((nodeOf(n.id) || n).p, patch); }); renderInspector(); renderGraphLight(n.id); touch(); done('авто-корекція');
+  toast('Кадр вирівняно. Підправте повзунками за смаком', 'ok');
+}
+
+/* ═════════ маски ═════════ */
+function maskInsp(box, n) {
+  const sec = h('div', 'csec', '<div class="csh">Маска: де діє вузол</div>'); box.appendChild(sec);
+  const cur = () => (nodeOf(n.id) || n).mask || null;
+  const sel = h('div', 'crow sel'); sel.innerHTML = `<label>Форма</label><select class="input" aria-label="Форма маски">${Object.entries(MASK_SHAPES).map(([k, v]) => `<option value="${k}"${(cur()?.type || 'none') === k ? ' selected' : ''}>${v}</option>`).join('')}</select>`;
+  sel.querySelector('select').addEventListener('change', e => { editGraph(() => { const m = nodeOf(n.id) || n; if (e.target.value === 'none') delete m.mask; else m.mask = { ...(m.mask || maskDefault()), type: e.target.value }; }); renderInspector(); touch(); done('маска'); });
+  sec.appendChild(sel);
+  const m = cur(); if (!m) { sec.appendChild(h('p', 'hint', 'Маска обмежує дію вузла колом, прямокутником або градієнтом. Наприклад, підсвітити обличчя чи затемнити небо.')); return; }
+  const set = k => v => { editGraph(() => { (nodeOf(n.id) || n).mask[k] = v; }); touch(); updateMaskOverlay(); };
+  const S_ = (l, k, a, b, st_, f, d) => sec.appendChild(slider(l, m[k], a, b, st_, f, set(k), d));
+  S_('Центр по горизонталі', 'x', 0, 1, 0.01, pct, 0.5); S_('Центр по вертикалі', 'y', 0, 1, 0.01, pct, 0.5);
+  if (m.type !== 'linear') S_('Ширина', 'w', 0.05, 1.5, 0.01, pct, 0.5);
+  S_(m.type === 'linear' ? 'Довжина переходу' : 'Висота', 'h', 0.05, 1.5, 0.01, pct, 0.5); S_('Поворот', 'rot', -180, 180, 1, v => v + '°', 0); S_('М\u2019якість краю', 'soft', 0, 1, 0.01, pct, 0.35);
+  const tg = h('div', 'ctog'); tg.innerHTML = `<label><input type="checkbox"${m.inv ? ' checked' : ''}> Навпаки: діє поза маскою</label>`;
+  tg.querySelector('input').addEventListener('change', e => { editGraph(() => { (nodeOf(n.id) || n).mask.inv = e.target.checked; }); touch(); done('інверсія маски'); }); sec.appendChild(tg);
+}
+// рамка маски над кадром: тягніть, щоб перемістити, кутовий маркер змінює розмір
+function updateMaskOverlay() {
+  let el = $('clrMask'); const wrap = $('pvWrap'), cv = previewCanvas(), n = st.page === 'color' ? nodeOf(st.sel) : null, m = n && MASKABLE.includes(n.type) ? n.mask : null;
+  if (!m || !wrap || !cv) { if (el) el.hidden = true; return; }
+  if (!el) {
+    el = h('div', 'clr-mask', '<div class="mk" tabindex="0" aria-label="Маска: перетягніть, щоб перемістити"><b class="mk-h" aria-label="Змінити розмір маски"></b></div>'); el.id = 'clrMask'; wrap.appendChild(el);
+    const mk = el.querySelector('.mk'), hd = el.querySelector('.mk-h'); let mode = null, start = null;
+    const rect = () => { const r = previewCanvas().getBoundingClientRect(); return r; };
+    mk.addEventListener('pointerdown', e => { if (e.target === hd) return; const r = rect(), mm = (nodeOf(st.sel) || {}).mask; if (!mm) return; mode = 'move'; start = { dx: (e.clientX - r.left) / r.width - mm.x, dy: (e.clientY - r.top) / r.height - mm.y }; mk.setPointerCapture(e.pointerId); e.preventDefault(); });
+    hd.addEventListener('pointerdown', e => { mode = 'size'; hd.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); });
+    const move = e => {
+      if (!mode) return; const r = rect(), n2 = nodeOf(st.sel); if (!n2?.mask) return; const mm = n2.mask;
+      if (mode === 'move') { editGraph(() => { const q = nodeOf(st.sel).mask; q.x = r2(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width - start.dx))); q.y = r2(Math.max(0, Math.min(1, (e.clientY - r.top) / r.height - start.dy))); }); }
+      else { const cx = r.left + mm.x * r.width, cy = r.top + mm.y * r.height, a = -mm.rot * Math.PI / 180, vx = e.clientX - cx, vy = e.clientY - cy, lx = vx * Math.cos(a) - vy * Math.sin(a), ly = vx * Math.sin(a) + vy * Math.cos(a); editGraph(() => { const q = nodeOf(st.sel).mask; q.w = r2(Math.max(0.05, Math.min(1.5, Math.abs(lx) * 2 / r.width))); q.h = r2(Math.max(0.05, Math.min(1.5, Math.abs(ly) * 2 / r.height))); }); }
+      touch(); updateMaskOverlay();
+    };
+    const end = () => { if (mode) { mode = null; renderInspector(); done('маска'); } };
+    mk.addEventListener('pointermove', move); hd.addEventListener('pointermove', move); mk.addEventListener('pointerup', end); hd.addEventListener('pointerup', end);
+    mk.addEventListener('keydown', e => { const d = { ArrowLeft: [-0.01, 0], ArrowRight: [0.01, 0], ArrowUp: [0, -0.01], ArrowDown: [0, 0.01] }[e.key]; if (!d) return; e.preventDefault(); editGraph(() => { const q = nodeOf(st.sel).mask; q.x = r2(Math.max(0, Math.min(1, q.x + d[0]))); q.y = r2(Math.max(0, Math.min(1, q.y + d[1]))); }); touch(); updateMaskOverlay(); done('маска'); });
+  }
+  el.hidden = false;
+  const cr = cv.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+  Object.assign(el.style, { left: cr.left - wr.left + 'px', top: cr.top - wr.top + 'px', width: cr.width + 'px', height: cr.height + 'px' });
+  const mk = el.querySelector('.mk'), lin = m.type === 'linear';
+  mk.className = 'mk ' + m.type; mk.style.left = (m.x * 100) + '%'; mk.style.top = (m.y * 100) + '%';
+  mk.style.width = (lin ? 1.2 : m.w) * 100 + '%'; mk.style.height = (lin ? m.h : m.h) * 100 + '%'; mk.style.transform = `translate(-50%,-50%) rotate(${m.rot}deg)`;
+}
+window.addEventListener('resize', () => { if (st.page === 'color') requestAnimationFrame(updateMaskOverlay); });
 
 /* ═════════ криві ═════════ */
 function curvesInsp(box, n, P) {

@@ -39,6 +39,26 @@ export const DEFAULTS = {
   in: () => ({}), out: () => ({}),
 };
 
+export const MASKABLE = ['prim', 'curves', 'hsl', 'lut', 'fx'];
+export const MASK_SHAPES = { none: 'Без маски', ellipse: 'Коло', rect: 'Прямокутник', linear: 'Градієнт' };
+export const maskDefault = () => ({ type: 'ellipse', x: 0.5, y: 0.5, w: 0.5, h: 0.5, rot: 0, soft: 0.35, inv: false });
+function fixMask(m) {
+  if (!isObj(m) || !MASK_SHAPES[m.type] || m.type === 'none') return undefined;
+  return { type: m.type, x: num(m.x, 0.5, -0.5, 1.5), y: num(m.y, 0.5, -0.5, 1.5), w: num(m.w, 0.5, 0.02, 2), h: num(m.h, 0.5, 0.02, 2), rot: num(m.rot, 0, -180, 180), soft: num(m.soft, 0.35, 0, 1), inv: !!m.inv };
+}
+// значення маски 0…1 у точці кадру (u, v від лівого верхнього кута, 0…1); aspect = ширина / висота кадру
+export function maskValue(m, u, v, aspect = 16 / 9) {
+  if (!m) return 1;
+  let px = (u - m.x) * aspect, py = v - m.y; const a = -m.rot * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+  [px, py] = [px * c - py * sn, px * sn + py * c];
+  const hx = Math.max(1e-3, m.w * aspect * 0.5), hy = Math.max(1e-3, m.h * 0.5), s_ = Math.max(0.02, m.soft);
+  let r;
+  if (m.type === 'ellipse') r = 1 - sstep(1 - s_, 1, Math.hypot(px / hx, py / hy));
+  else if (m.type === 'rect') r = 1 - sstep(1 - s_, 1, Math.max(Math.abs(px) / hx, Math.abs(py) / hy));
+  else r = 1 - sstep(-s_, s_, py / hy);
+  return m.inv ? 1 - r : r;
+}
+
 let idn = 0;
 export const nodeId = () => 'n' + Date.now().toString(36).slice(-4) + (idn++).toString(36) + Math.random().toString(36).slice(2, 5);
 export const newNode = (type, x = 0, y = 0) => ({ id: nodeId(), type, x, y, p: DEFAULTS[type]() });
@@ -75,7 +95,7 @@ export function repairGraph(cg) {
   for (const n of cg.nodes.slice(0, 40)) {
     if (!isObj(n) || typeof n.id !== 'string' || !NODE_TYPES[n.type] || seen.has(n.id)) continue;
     seen.add(n.id);
-    nodes.push({ id: n.id.slice(0, 24), type: n.type, x: num(n.x, 0, -5000, 5000), y: num(n.y, 0, -5000, 5000), ...(n.off ? { off: true } : {}), p: fixParams(n.type, n.p) });
+    nodes.push({ id: n.id.slice(0, 24), type: n.type, x: num(n.x, 0, -5000, 5000), y: num(n.y, 0, -5000, 5000), ...(n.off ? { off: true } : {}), ...(MASKABLE.includes(n.type) && fixMask(n.mask) ? { mask: fixMask(n.mask) } : {}), p: fixParams(n.type, n.p) });
   }
   if (nodes.filter(n => n.type === 'in').length !== 1 || nodes.filter(n => n.type === 'out').length !== 1) return undefined;
   const ids = new Set(nodes.map(n => n.id)), links = [], used = new Set();
@@ -201,7 +221,7 @@ function blendMode(a, b, mode) {
   }
 }
 // граф для одного пікселя (RGB 0…1); luts — S.project.luts
-export function evalPixel(cg, rgb, luts = []) {
+export function evalPixel(cg, rgb, luts = [], pos = null) {
   const memo = new Map();
   const ev = id => {
     if (memo.has(id)) return memo.get(id);
@@ -215,6 +235,7 @@ export function evalPixel(cg, rgb, luts = []) {
     else if (n.type === 'mix') { const A = a(), fb = inputOf(cg, id, 1), B = fb ? ev(fb) : A; r = A.map((v, i) => v + (blendMode(v, B[i], n.p.mode) - v) * n.p.amount); }
     else if (n.type === 'fx') r = a().map(v => v * (1 - n.p.fade * 0.15) + n.p.fade * 0.08);
     else r = a();
+    if (n.mask && !n.off && !nodeNeutral(n) && pos) { const base = a(), k = maskValue(n.mask, pos.u, pos.v, pos.aspect); r = base.map((v, i) => v + (r[i] - v) * k); }
     memo.set(id, r); return r;
   };
   const evInput = () => rgb.slice();
@@ -259,6 +280,14 @@ void main(){ vec3 c=texture(uA,vUv).rgb;
   if(uGlow>0.){ vec3 s=vec3(0.); float w=0.; for(int i=0;i<12;i++){ float a=float(i)*.5236; for(int j=1;j<=2;j++){ vec2 off=vec2(cos(a),sin(a))*uPx*float(j)*6.; vec3 t=texture(uA,vUv+off).rgb; float k=smoothstep(.55,1.,dot(t,LU)); s+=t*k; w+=1.; } } c+=s/w*uGlow*1.4; }
   float d=distance(vUv,vec2(.5))*1.414; c*=1.-uVig*smoothstep(uVsz,1.1,d);
   c+=(hash(vUv/uPx*.37+uSeed)-.5)*uGrain*.18; c=c*(1.-uFade*.15)+uFade*.08; o=vec4(c,1.); }`,
+  maskmix: HEAD + `uniform float uShape,uSoft,uInv,uAsp; uniform vec4 uM; uniform float uRot;
+void main(){ vec3 a=texture(uA,vUv).rgb,b=texture(uB,vUv).rgb;
+  vec2 p=(vec2(vUv.x,1.-vUv.y)-uM.xy)*vec2(uAsp,1.); float ca=cos(-uRot),sa=sin(-uRot); p=vec2(p.x*ca-p.y*sa,p.x*sa+p.y*ca);
+  float hx=max(1e-3,uM.z*uAsp*.5),hy=max(1e-3,uM.w*.5),s=max(.02,uSoft),r;
+  if(uShape<1.5) r=1.-smoothstep(1.-s,1.,length(p/vec2(hx,hy)));
+  else if(uShape<2.5) r=1.-smoothstep(1.-s,1.,max(abs(p.x)/hx,abs(p.y)/hy));
+  else r=1.-smoothstep(-s,s,p.y/hy);
+  r=mix(r,1.-r,uInv); o=vec4(mix(a,b,r),1.); }`,
   mix: HEAD + `uniform float uAmt,uMode;
 vec3 bl(vec3 a,vec3 b,int m){ if(m==1) return a+b; if(m==2) return a*b; if(m==3) return 1.-(1.-a)*(1.-b);
   if(m==4) return mix(2.*a*b,1.-2.*(1.-a)*(1.-b),step(.5,a)); if(m==5) return (1.-2.*b)*a*a+2.*b*a; if(m==6) return abs(a-b); return b; }
@@ -362,6 +391,11 @@ class GPU {
         else if (n.type === 'lut') { const lut = luts.find(l => l.id === p.lut); if (!lut) { pass('copy', A.tex, null, own); } else { gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_3D, this.lut3d(lut)); pass('lut', A.tex, null, own, u => u('uMix', p.mix)); } }
         else if (n.type === 'fx') pass('fx', A.tex, null, own, u => { u('uVig', p.vig); u('uVsz', p.vigSize); u('uGrain', p.grain); u('uGlow', p.glow); u('uFade', p.fade); });
         else if (n.type === 'mix') pass('mix', A.tex, Bt ? Bt.tex : A.tex, own, u => { u('uAmt', p.amount); u('uMode', MIX_ID.indexOf(p.mode)); });
+        if (n.mask && MASKABLE.includes(n.type)) {
+          const m = n.mask, own2 = this.take(W, H), shape = { ellipse: 1, rect: 2, linear: 3 }[m.type];
+          pass('maskmix', A.tex, own.t, own2, u => { u('uShape', shape); u('uSoft', m.soft); u('uInv', m.inv ? 1 : 0); u('uAsp', W / H); u('uM', m.x, m.y, m.w, m.h); u('uRot', m.rot * Math.PI / 180); });
+          own.busy = false; own = own2;
+        }
         outTex = own.t;
       }
       res.set(n.id, { tex: outTex, own });

@@ -34,7 +34,7 @@ async function compare(name, make, tol = 6) {
     const r = await page.evaluate(`(() => { ${SET}
       const cg = C.repairGraph((${make})(C)); const ok = C.applyGraph(ctx, W, H, cg, []);
       const out = ctx.getImageData(0, 0, W, H).data; let worst = 0, wi = 0, bad = 0;
-      for (let i = 0; i < W * H; i++) { const e = C.evalPixel(cg, [src[i * 4] / 255, src[i * 4 + 1] / 255, src[i * 4 + 2] / 255]); for (let k = 0; k < 3; k++) { const d = Math.abs(out[i * 4 + k] - e[k] * 255); if (d > worst) { worst = d; wi = i; } if (d > ${tol}) bad++; } }
+      for (let i = 0; i < W * H; i++) { const e = C.evalPixel(cg, [src[i * 4] / 255, src[i * 4 + 1] / 255, src[i * 4 + 2] / 255], [], { u: ((i % W) + 0.5) / W, v: (Math.floor(i / W) + 0.5) / H, aspect: W / H }); for (let k = 0; k < 3; k++) { const d = Math.abs(out[i * 4 + k] - e[k] * 255); if (d > worst) { worst = d; wi = i; } if (d > ${tol}) bad++; } }
       return { ok, worst, wi, bad };
     })()`);
     assert.ok(r.ok, 'граф застосовано на GPU');
@@ -47,6 +47,16 @@ await compare('первинна: колеса, температура й нас�
 await compare('криві: S-крива і канали', `C => { const g = C.newGraph(); g.nodes[1].type = 'curves'; g.nodes[1].p = { m: [[0, 0], [0.3, 0.2], [0.7, 0.85], [1, 1]], r: [[0, 0.05], [1, 0.95]], g: [[0, 0], [1, 1]], b: [[0, 0.1], [0.5, 0.45], [1, 1]] }; return g; }`);
 await compare('HSL: вибраний колір зсувається, інші ні', `C => { const g = C.newGraph(); g.nodes[1].type = 'hsl'; g.nodes[1].p = { ...C.DEFAULTS.hsl(), hue: 200, width: 90, dh: 0.1, ds: 1.4, dl: 0.1, soft: 0.3 }; return g; }`, 8);
 await compare('змішати: множення двох гілок', `C => { const g = C.newGraph(); const a = C.newNode('prim'); a.id = 'a'; a.p.exp = 0.6; const m = C.newNode('mix'); m.id = 'm'; m.p = { mode: 'multiply', amount: 0.8 }; g.nodes.splice(1, 1, a, m); g.links = [{ from: 'in', to: 'a', port: 0 }, { from: 'in', to: 'm', port: 0 }, { from: 'a', to: 'm', port: 1 }, { from: 'm', to: 'out', port: 0 }]; return g; }`);
+const masked = (type, extra) => `C => { const g = C.newGraph(); Object.assign(g.nodes[1].p, { exp: 0.9, sat: 1.5, temp: 0.3 }); g.nodes[1].mask = { ...C.maskDefault(), type: '${type}', ${extra} }; return g; }`;
+await compare('маска-коло на первинній', masked('ellipse', 'x: 0.4, y: 0.55, w: 0.5, h: 0.6, soft: 0.4'), 8);
+await compare('маска-прямокутник з поворотом, інвертована', masked('rect', 'x: 0.55, y: 0.45, w: 0.4, h: 0.5, rot: 25, soft: 0.2, inv: true'), 8);
+await compare('маска-градієнт', masked('linear', 'x: 0.5, y: 0.5, h: 0.6, rot: -20, soft: 0.5'), 8);
+await step('маска змінює лише свою ділянку', async () => {
+  const r = await page.evaluate(`(() => { ${SET} const g = C.repairGraph((${masked('ellipse', 'x: 0.5, y: 0.6, w: 0.3, h: 0.3, soft: 0.1')})(C)); const before = Array.from(src); C.applyGraph(ctx, W, H, g, []); const out = ctx.getImageData(0, 0, W, H).data;
+    const ch = (x, y) => { const i = (y * W + x) * 4; return Math.abs(out[i] - before[i]) + Math.abs(out[i + 1] - before[i + 1]) + Math.abs(out[i + 2] - before[i + 2]); };
+    return { centre: ch(24, Math.round(H * 0.6)), corner: ch(1, 1), far: ch(46, 30) }; })()`);
+  assert.ok(r.centre > 25 && r.corner < 2 && r.far < 2, JSON.stringify(r));
+});
 // ефекти (віньєтка, зерно) перевіряємо окремо, тут їх вимикаємо, бо еталон на CPU рахує лише колір
 for (const id of ['golden', 'noir', 'fresh', 'teal', 'cinema', 'retro']) await compare('рецепт «' + id + '»', `C => { const g = C.recipeGraph('${id}'); for (const n of g.nodes) if (n.type === 'fx') n.p = { ...C.DEFAULTS.fx() }; return g; }`, 9);
 

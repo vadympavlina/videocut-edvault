@@ -59,6 +59,49 @@ export function maskValue(m, u, v, aspect = 16 / 9) {
   return m.inv ? 1 - r : r;
 }
 
+/* ═════════ ключові кадри параметрів ═════════
+   node.kf = { 'p.exp': [[t, v], …], 'mask.x': […] }, t — секунди від початку кліпа. Між ключами плавний перехід, поза ними значення тримається. */
+const KF_PATH = /^(p|mask)(\.[a-zA-Z0-9]+){1,2}$/;
+export const getPath = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
+export function setPath(o, path, v) { const ks = path.split('.'), last = ks.pop(); let a = o; for (const k of ks) { if (a[k] == null) return false; a = a[k]; } if (a[last] === undefined) return false; a[last] = v; return true; }
+export const hasKf = n => !!n.kf && Object.keys(n.kf).length > 0;
+export function kfValue(keys, t) {
+  if (!keys.length) return undefined;
+  if (t <= keys[0][0]) return keys[0][1]; if (t >= keys[keys.length - 1][0]) return keys[keys.length - 1][1];
+  let i = 0; while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
+  const [t0, v0] = keys[i], [t1, v1] = keys[i + 1], u = sstep(t0, t1, t); return v0 + (v1 - v0) * u;
+}
+export function kfSet(n, path, t, v) {
+  const keys = ((n.kf ||= {})[path] ||= []); const i = keys.findIndex(k => Math.abs(k[0] - t) < 0.04);
+  if (i >= 0) keys[i] = [keys[i][0], v]; else { keys.push([Math.max(0, +t.toFixed(3)), v]); keys.sort((a, b) => a[0] - b[0]); }
+}
+export function kfRemove(n, path, t) {
+  const keys = n.kf?.[path]; if (!keys) return; const i = keys.findIndex(k => Math.abs(k[0] - t) < 0.04); if (i >= 0) keys.splice(i, 1);
+  if (!keys.length) { delete n.kf[path]; if (!Object.keys(n.kf).length) delete n.kf; }
+}
+export const kfAt = (n, path, t) => !!n.kf?.[path]?.some(k => Math.abs(k[0] - t) < 0.04);
+// усі моменти ключових кадрів вузла (для смужки під кадром)
+export const kfTimes = n => [...new Set(Object.values(n.kf || {}).flatMap(a => a.map(k => +k[0].toFixed(3))))].sort((a, b) => a - b);
+// граф у момент t (секунди від початку кліпа): значення з ключів підставлено у копію
+export function animatedGraph(cg, t) {
+  if (!cg || !cg.nodes.some(hasKf)) return cg;
+  return { ...cg, nodes: cg.nodes.map(n => {
+    if (!hasKf(n)) return n;
+    const m = { ...n, p: JSON.parse(JSON.stringify(n.p)), ...(n.mask ? { mask: { ...n.mask } } : {}) };
+    for (const [path, keys] of Object.entries(n.kf)) { const v = kfValue(keys, t); if (v !== undefined) setPath(m, path, v); }
+    return m;
+  }) };
+}
+function fixKf(kf) {
+  if (!isObj(kf)) return undefined; const out = {};
+  for (const [path, keys] of Object.entries(kf).slice(0, 14)) {
+    if (!KF_PATH.test(path) || !Array.isArray(keys)) continue;
+    const k = keys.filter(q => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1])).map(q => [Math.max(0, q[0]), q[1]]).sort((a, b) => a[0] - b[0]).slice(0, 40);
+    if (k.length) out[path] = k;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 let idn = 0;
 export const nodeId = () => 'n' + Date.now().toString(36).slice(-4) + (idn++).toString(36) + Math.random().toString(36).slice(2, 5);
 export const newNode = (type, x = 0, y = 0) => ({ id: nodeId(), type, x, y, p: DEFAULTS[type]() });
@@ -95,7 +138,7 @@ export function repairGraph(cg) {
   for (const n of cg.nodes.slice(0, 40)) {
     if (!isObj(n) || typeof n.id !== 'string' || !NODE_TYPES[n.type] || seen.has(n.id)) continue;
     seen.add(n.id);
-    nodes.push({ id: n.id.slice(0, 24), type: n.type, x: num(n.x, 0, -5000, 5000), y: num(n.y, 0, -5000, 5000), ...(n.off ? { off: true } : {}), ...(MASKABLE.includes(n.type) && fixMask(n.mask) ? { mask: fixMask(n.mask) } : {}), p: fixParams(n.type, n.p) });
+    nodes.push({ id: n.id.slice(0, 24), type: n.type, x: num(n.x, 0, -5000, 5000), y: num(n.y, 0, -5000, 5000), ...(n.off ? { off: true } : {}), ...(MASKABLE.includes(n.type) && fixMask(n.mask) ? { mask: fixMask(n.mask) } : {}), ...(fixKf(n.kf) && n.type !== 'in' && n.type !== 'out' ? { kf: fixKf(n.kf) } : {}), p: fixParams(n.type, n.p) });
   }
   if (nodes.filter(n => n.type === 'in').length !== 1 || nodes.filter(n => n.type === 'out').length !== 1) return undefined;
   const ids = new Set(nodes.map(n => n.id)), links = [], used = new Set();
@@ -131,6 +174,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const wz = w => Math.abs(w.x) < 1e-4 && Math.abs(w.y) < 1e-4 && Math.abs(w.l) < 1e-4;
 export function nodeNeutral(n) {
   if (n.off) return true;
+  if (hasKf(n)) return false;
   const p = n.p;
   switch (n.type) {
     case 'prim': return wz(p.lift) && wz(p.gamma) && wz(p.gain) && wz(p.offset) && !p.exp && p.con === 1 && p.sat === 1 && !p.temp && !p.tint && !p.hi && !p.sh;
@@ -425,6 +469,7 @@ export const COLOR_VIEW = { on: false, split: 0, mask: null, bypass: false };
 export function applyGraph(ctx, W, H, cg, luts = [], opts = {}) {
   const v = !opts.export && COLOR_VIEW.on ? COLOR_VIEW : null;
   if (!cg || v?.bypass) return false;
+  cg = animatedGraph(cg, opts.t || 0);
   const mask = v?.mask && cg.nodes.some(n => n.id === v.mask) ? v.mask : null, split = v?.split || 0;
   if (isIdentityGraph(cg) && !mask) return false;
   const ok = MAIN.run(ctx.canvas, cg, W, H, luts, { seed: (++frameNo % 1000) * 0.137, mask, split });

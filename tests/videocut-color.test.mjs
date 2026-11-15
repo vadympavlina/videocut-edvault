@@ -1,7 +1,7 @@
 // Колірний граф: модель, ремонт, порядок обчислення й математика (еталон на CPU).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { maskValue, maskDefault, MASKABLE, newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
+import { kfValue, kfSet, kfRemove, kfAt, kfTimes, animatedGraph, hasKf, getPath, setPath, maskValue, maskDefault, MASKABLE, newGraph, newNode, repairGraph, graphOrder, isIdentityGraph, curveTable, evalPixel, hslMask, wheelRGB, hsv2rgb, rgb2hsv, RECIPES, recipeGraph, DEFAULTS } from '../videocut-app/js/color.js';
 
 const close = (a, b, e = 1e-3) => a.every((v, i) => Math.abs(v - b[i]) <= e);
 
@@ -104,4 +104,33 @@ test('evalPixel: маска обмежує дію вузла', () => {
   const g = newGraph(); g.nodes[1].p.exp = 1; g.nodes[1].mask = { ...maskDefault(), type: 'ellipse', x: 0.5, y: 0.5, w: 0.3, h: 0.3, soft: 0.1 };
   const r = repairGraph(g), pos = (u, v) => ({ u, v, aspect: 1.5 });
   assert.ok(evalPixel(r, [0.3, 0.3, 0.3], [], pos(0.5, 0.5))[0] > 0.55 && Math.abs(evalPixel(r, [0.3, 0.3, 0.3], [], pos(0.05, 0.05))[0] - 0.3) < 0.01);
+});
+
+test('ключові кадри: плавний перехід, утримання поза ключами, видалення', () => {
+  const n = newNode('prim'); kfSet(n, 'p.exp', 0, 0); kfSet(n, 'p.exp', 4, 2);
+  const k = n.kf['p.exp'];
+  assert.equal(kfValue(k, -1), 0); assert.equal(kfValue(k, 9), 2); assert.ok(Math.abs(kfValue(k, 2) - 1) < 1e-9, 'посередині — половина');
+  assert.ok(kfValue(k, 1) < 0.5 && kfValue(k, 3) > 1.5, 'плавний вхід і вихід');
+  kfSet(n, 'p.exp', 4.01, 3); assert.equal(n.kf['p.exp'].length, 2, 'ключ поруч замінюється, а не дублюється'); assert.equal(n.kf['p.exp'][1][1], 3);
+  assert.ok(kfAt(n, 'p.exp', 0.02) && !kfAt(n, 'p.exp', 2)); assert.deepEqual(kfTimes(n), [0, 4]);
+  kfRemove(n, 'p.exp', 0); kfRemove(n, 'p.exp', 4); assert.equal(n.kf, undefined, 'без ключів поле зникає');
+});
+
+test('animatedGraph підставляє значення на момент часу й не чіпає оригінал', () => {
+  const g = newGraph(); const p = g.nodes[1]; kfSet(p, 'p.exp', 0, 0); kfSet(p, 'p.exp', 2, 1); kfSet(p, 'p.lift.x', 0, 0); kfSet(p, 'p.lift.x', 2, 0.8);
+  const a = animatedGraph(g, 1);
+  assert.ok(Math.abs(a.nodes[1].p.exp - 0.5) < 1e-9 && Math.abs(a.nodes[1].p.lift.x - 0.4) < 1e-9); assert.equal(g.nodes[1].p.exp, 0, 'оригінал не змінено');
+  assert.equal(isIdentityGraph(g), false, 'вузол із ключами не вважається нейтральним');
+  const before = evalPixel(animatedGraph(g, 0), [0.3, 0.3, 0.3]), after = evalPixel(animatedGraph(g, 2), [0.3, 0.3, 0.3]);
+  assert.ok(after[0] > before[0] + 0.1);
+  assert.equal(animatedGraph(newGraph(), 1).nodes.length, 3); assert.ok(!hasKf(newGraph().nodes[1]));
+});
+
+test('repairGraph чистить ключі й анімація маски працює', () => {
+  const g = newGraph(); g.nodes[1].mask = { type: 'ellipse' }; g.nodes[1].kf = { 'p.exp': [[2, 1], [0, 0], ['x', 3]], 'bad path': [[0, 1]], 'p.con': 'нема', 'mask.x': [[0, 0.2], [3, 0.8]] };
+  const r = repairGraph(g).nodes[1];
+  assert.deepEqual(r.kf['p.exp'], [[0, 0], [2, 1]]); assert.deepEqual(Object.keys(r.kf).sort(), ['mask.x', 'p.exp']);
+  const a = animatedGraph({ ...repairGraph(g) }, 1.5); assert.ok(a.nodes[1].mask.x > 0.4 && a.nodes[1].mask.x < 0.6);
+  const gi = newGraph(); gi.nodes[0].kf = { 'p.exp': [[0, 1]] }; assert.equal(repairGraph(gi).nodes[0].kf, undefined, 'на вході ключів немає');
+  assert.equal(getPath({ a: { b: 2 } }, 'a.b'), 2); const o = { a: { b: 1 } }; assert.ok(setPath(o, 'a.b', 5) && o.a.b === 5 && !setPath(o, 'a.z', 1));
 });

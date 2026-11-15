@@ -71,6 +71,15 @@ await step('ефекти: віньєтка темнить кути, зерно �
   })()`);
   assert.ok(r.corner < r.centre - 15, 'кути темніші за центр: ' + JSON.stringify(r)); assert.ok(r.diff > 500, 'зерно відрізняється між кадрами');
 });
+await step('ключові кадри: яскравість росте з часом (однаково на GPU й на CPU)', async () => {
+  const r = await page.evaluate(`(() => { ${SET}
+    const g = C.newGraph(); const n = g.nodes[1]; C.kfSet(n, 'p.exp', 0, 0); C.kfSet(n, 'p.exp', 2, 1.5);
+    const at = t => { ctx.putImageData(img, 0, 0); C.applyGraph(ctx, W, H, C.repairGraph(g), [], { t }); const d = ctx.getImageData(0, 0, W, H).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] + d[i + 1] + d[i + 2]; return s; };
+    const a = at(0), b = at(1), c = at(2), cpu = t => { const gg = C.animatedGraph(C.repairGraph(g), t); let s = 0; for (let i = 0; i < W * H; i++) { const e = C.evalPixel(gg, [src[i * 4] / 255, src[i * 4 + 1] / 255, src[i * 4 + 2] / 255]); s += (e[0] + e[1] + e[2]) * 255; } return s; };
+    return { a, b, c, ca: cpu(0), cb: cpu(1), cc: cpu(2) }; })()`);
+  assert.ok(r.a < r.b && r.b < r.c, 'зростає: ' + JSON.stringify(r)); const rel = (x, y) => Math.abs(x - y) / y;
+  assert.ok(rel(r.b, r.cb) < 0.02 && rel(r.c, r.cc) < 0.02 && rel(r.a, r.ca) < 0.02, 'GPU = CPU: ' + JSON.stringify(r));
+});
 await step('нейтральний граф нічого не змінює й повертає false', async () => {
   const r = await page.evaluate(`(() => { ${SET} const before = Array.from(src); const ok = C.applyGraph(ctx, W, H, C.newGraph(), []); const out = ctx.getImageData(0, 0, W, H).data; return { ok, same: before.every((v, i) => v === out[i]) }; })()`);
   assert.equal(r.ok, false); assert.ok(r.same);

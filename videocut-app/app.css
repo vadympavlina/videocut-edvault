@@ -1304,3 +1304,22 @@ body[data-page="color"] .pv-bar .pv-tools{display:none}
 .clr-mask .mk-h{position:absolute;right:-8px;bottom:-8px;width:14px;height:14px;border-radius:4px;background:#fff;border:2px solid var(--accent);cursor:nwse-resize;pointer-events:auto;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .clr-mask .mk.ellipse .mk-h{right:calc(14.6% - 8px);bottom:calc(14.6% - 8px)}
 .crow.auto{grid-template-columns:1fr;margin:0 0 10px}
+
+/* ключові кадри на сторінці «Колір» */
+.crow.kf{grid-template-columns:104px minmax(0,1fr) 40px 24px}
+.kfb{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:var(--muted)}
+.kfb svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linejoin:round}
+.kfb:hover{color:var(--text);background:var(--surface2)}
+.kfb.anim{color:var(--accent)}.kfb.on{color:var(--on-accent);background:var(--accent)}.kfb.on svg{fill:currentColor}
+.kfb:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.wh-t{display:flex;align-items:center;gap:4px}
+.kf-strip{display:flex;align-items:center;gap:8px;padding:6px 12px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.kf-track{position:relative;flex:1;height:26px;border-radius:8px;background:var(--surface2);cursor:ew-resize;touch-action:none;outline:none}
+.kf-track:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.kf-strip.has .kf-track{background:linear-gradient(var(--accent-light),var(--accent-light)),var(--surface2)}
+.kf-head{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--text);pointer-events:none;border-radius:1px}
+.kf-head::before{content:'';position:absolute;left:-4px;top:-3px;width:10px;height:6px;border-radius:2px;background:var(--text)}
+.kf-mark{position:absolute;top:50%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;background:var(--accent);transform:rotate(45deg);border-radius:2px;cursor:pointer;box-shadow:0 0 0 1.5px var(--surface)}
+.kf-mark:hover{background:var(--accent-hover)}
+.kf-info{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:88px;text-align:right}
+body[data-page="edit"] .kf-strip{display:none}

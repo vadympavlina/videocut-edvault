@@ -140,9 +140,35 @@ await step('«Авто-корекція» вирівнює темний кадр
   await p.click('#cgAll'); await settle(); // один кліп: нічого копіювати
   assert.equal(await p.evaluate(() => window.VideoCut.S.project.clips.length), 1);
 });
+await step('ключові кадри: ромбик додає ключ, зміна в іншому місці дописує другий, яскравість змінюється з часом', async () => {
+  await p.evaluate(() => window.VideoCut.seek(0)); await p.click('#cgReset'); await settle(); await p.locator('#cgNodes .cn', { hasText: 'Колеса' }).click();
+  const row = p.locator('#clrInsp .crow', { hasText: 'Експозиція' });
+  await row.locator('.kfb').click(); await settle();
+  let g = await cg(); assert.equal(g.nodes.find(n => n.type === 'prim').kf['p.exp'].length, 1, 'перший ключ');
+  assert.equal(await p.locator('#kfTrack .kf-mark').count(), 1);
+  await p.evaluate(() => window.VideoCut.seek(3)); await settle(); await settle();
+  await p.evaluate(() => { const r = [...document.querySelectorAll('#clrInsp .crow')].find(x => /Експозиція/.test(x.textContent)).querySelector('input'); r.value = 1.5; r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); });
+  await settle(); g = await cg(); const keys = g.nodes.find(n => n.type === 'prim').kf['p.exp']; assert.equal(keys.length, 2, 'другий ключ записано автоматично: ' + JSON.stringify(keys)); assert.ok(Math.abs(keys[1][0] - 3) < 0.1 && keys[1][1] === 1.5 && keys[0][1] === 0);
+  assert.equal(await p.locator('#kfTrack .kf-mark').count(), 2);
+  const at3 = await mean(); await p.evaluate(() => window.VideoCut.seek(0)); await settle(); await settle(); const at0 = await mean(); await p.evaluate(() => window.VideoCut.seek(1.5)); await settle(); await settle(); const at15 = await mean();
+  const lum = a => a[0] + a[1] + a[2]; assert.ok(lum(at3) > lum(at15) + 5 && lum(at15) > lum(at0) + 5, `яскравість росте з часом: ${lum(at0)} < ${lum(at15)} < ${lum(at3)}`);
+  assert.equal(await row.locator('input').evaluate(e => +e.value) > 0.3, true, 'повзунок показує проміжне значення');
+  await p.evaluate(() => window.VideoCut.seek(0)); await settle(); await p.click('#kfNext'); await settle(); assert.ok(Math.abs(await p.evaluate(() => window.VideoCut.S.t) - 3) < 0.1, 'наступний ключовий кадр');
+  await p.click('#kfPrev'); await settle(); assert.ok(Math.abs(await p.evaluate(() => window.VideoCut.S.t)) < 0.1, 'попередній ключовий кадр');
+  await row.locator('.kfb').click(); await settle(); g = await cg(); assert.equal(g.nodes.find(n => n.type === 'prim').kf['p.exp'].length, 1, 'ромбик на ключі видаляє його');
+  await undo(); await undo(); await settle();
+});
+await step('анімація потрапляє в експорт: перший і останній кадри мають різну яскравість', async () => {
+  await p.evaluate(() => window.VideoCut.seek(0)); await p.click('#cgReset'); await settle(); await p.locator('#cgNodes .cn', { hasText: 'Колеса' }).click();
+  await p.evaluate(() => { const g = window.VideoCut.S.project.clips[0].cg, n = g.nodes.find(q => q.type === 'prim'); n.kf = { 'p.exp': [[0, -1.5], [5, 1.5]] }; });
+  const b64 = await p.evaluate(async () => { const blob = await window.VideoCut.exportVideo({ format: 'webm', quality: 'low', short: 360 }); const buf = new Uint8Array(await blob.arrayBuffer()); let s = ''; for (let i = 0; i < buf.length; i += 32768) s += String.fromCharCode(...buf.subarray(i, i + 32768)); return btoa(s); });
+  const f = join(tmp, 'anim.webm'); await writeFile(f, Buffer.from(b64, 'base64'));
+  const lumAt = t => { const r = spawnSync('ffmpeg', ['-v', 'error', '-ss', String(t), '-i', f, '-frames:v', '1', '-vf', 'scale=8:8', '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], { encoding: 'buffer', maxBuffer: 1e6 }); const d = r.stdout; return d && d.length ? d.reduce((a, b) => a + b, 0) / d.length : NaN; };
+  const a = lumAt(0.2), z = lumAt(4.6); assert.ok(z > a + 25, `у файлі яскравість росте: ${a} → ${z}`);
+});
 await step('граф переживає ремонт проєкту (збереження й відкриття)', async () => {
-  const r = await p.evaluate(async () => { const { repairProject } = await import('/videocut-app/js/state.js'); const a = window.VideoCut.S.project, b = repairProject(JSON.parse(JSON.stringify(a))); return { same: JSON.stringify(a.clips[0].cg) === JSON.stringify(b.clips[0].cg), n: b.clips[0].cg.nodes.length }; });
-  assert.ok(r.same && r.n >= 3, JSON.stringify(r));
+  const r = await p.evaluate(async () => { const { repairProject } = await import('/videocut-app/js/state.js'); const a = window.VideoCut.S.project, b = repairProject(JSON.parse(JSON.stringify(a))); const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort()) : x)); return { same: canon(a.clips[0].cg) === canon(b.clips[0].cg), n: b.clips[0].cg.nodes.length, kf: !!b.clips[0].cg.nodes.find(q => q.kf) }; });
+  assert.ok(r.same && r.n >= 3 && r.kf, JSON.stringify(r));
 });
 await step('експорт містить корекцію й не містить «До / Після»: чорно-біле всюди, навіть під роздільником', async () => {
   await p.click('#clrBA'); await p.locator('#rcList .rc', { hasText: 'Нуар' }).click(); await settle();

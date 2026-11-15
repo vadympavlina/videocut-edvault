@@ -6,6 +6,7 @@ import { parseCube } from './lut.js';
 import {
   COLOR_VIEW, NODE_TYPES, ADDABLE, MIX_MODES, DEFAULTS, RECIPES, newGraph, newNode, repairGraph, recipeGraph, graphOrder, isIdentityGraph,
   nodeNeutral, renderThumbs, curveTable, rgb2hsv, gpuAvailable, MASKABLE, MASK_SHAPES, maskDefault,
+  animatedGraph, kfSet, kfRemove, kfAt, kfTimes, kfValue, getPath, setPath, hasKf,
 } from './color.js';
 import { drawWaveform, drawVector, drawHist, histogram } from './scopes.js';
 
@@ -29,6 +30,15 @@ function editGraph(fn) {
   fn(c.cg, c);
   return true;
 }
+const curT = () => { const l = curLayout(); return l ? Math.max(0, S.t - l.start) : 0; };
+// значення параметра зараз (з урахуванням ключових кадрів)
+function valAt(id, path) { const n = nodeOf(id); if (!n) return 0; const k = n.kf?.[path]; return k ? kfValue(k, curT()) : getPath(n, path); }
+// запис параметра: якщо він анімований, пишемо ключ у поточний момент
+function writeParam(id, path, v) {
+  editGraph(() => { const m = nodeOf(id); if (!m) return; if (m.kf?.[path]) kfSet(m, path, curT(), v); setPath(m, path, v); });
+  renderKfStrip();
+}
+let selId = null; // вузол, чий інспектор показано
 const nodeOf = id => (curGraph() || (curClip() ? newGraph() : null))?.nodes.find(n => n.id === id) || null;
 const touch = (structure = false) => { requestDraw(); queueThumbs(); queueScopes(); if (structure) { renderGraph(); } };
 const done = label => { commit('Колір: ' + label); };
@@ -70,7 +80,7 @@ export function initColorUi() {
     <button class="btn btn-sm" id="clrPick" aria-pressed="false" data-tip="Піпетка: виберіть колір на кадрі для вузла HSL">${icon('dropper')}Піпетка</button></div>`;
   root.scopes.innerHTML = `<div class="sc-tabs" role="tablist" aria-label="Вид осцилографа"><button role="tab" aria-selected="true" class="on" data-sc="luma">Яскравість</button><button role="tab" aria-selected="false" data-sc="rgb">RGB</button><button role="tab" aria-selected="false" data-sc="hist">Гістограма</button></div>
     <canvas id="scWave" width="248" height="130" aria-label="Осцилограф"></canvas><div class="sc-l">Векторскоп</div><canvas id="scVec" width="130" height="130" aria-label="Векторскоп"></canvas>`;
-  wireGraphCanvas(); wireViewControls();
+  wireGraphCanvas(); wireViewControls(); wireKfStrip();
   $('cgAdd').addEventListener('click', e => addMenu(e.currentTarget));
   $('cgFit').addEventListener('click', fitView);
   $('cgAll').addEventListener('click', () => {
@@ -80,7 +90,7 @@ export function initColorUi() {
   });
   $('cgReset').addEventListener('click', () => { if (!curClip()) return; editGraph((g, c) => { c.cg = newGraph(); }); st.sel = 'prim1'; touch(true); renderInspector(); done('граф скинуто'); });
   root.scopes.addEventListener('click', e => { const b = e.target.closest('[data-sc]'); if (!b) return; st.scope = b.dataset.sc; for (const x of root.scopes.querySelectorAll('[data-sc]')) { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); } queueScopes(); });
-  on('time', () => { if (st.page === 'color') { onClipMaybeChanged(); queueScopes(); queueRecipeThumbs(); } });
+  on('time', () => { if (st.page === 'color') { onClipMaybeChanged(); queueScopes(); queueRecipeThumbs(); updateKfHead(); if (curGraph()?.nodes.some(hasKf)) { queueThumbs(); const nn = nodeOf(selId); if (nn && hasKf(nn)) for (const e of root.insp.querySelectorAll('.crow, .wheel')) e._refresh?.(); updateMaskOverlay(); } } });
   on('project', () => { if (st.page === 'color') { if (!S.project.clips.length) { setPage('edit'); return; } onClipMaybeChanged(true); queueThumbs(); queueScopes(); queueRecipeThumbs(); } });
   on('select', () => { });
 }
@@ -92,7 +102,7 @@ function onClipMaybeChanged(force) {
   if (!nodeOf(st.sel) && !(c && !c.cg && st.sel === 'prim1')) st.sel = c ? (c.cg || newGraph()).nodes.find(n => n.type === 'prim')?.id || 'in' : null;
   renderAll();
 }
-function renderAll() { renderStrip(); renderGraph(); renderInspector(); renderRecipes(); queueThumbs(); }
+function renderAll() { renderStrip(); renderGraph(); renderInspector(); renderRecipes(); queueThumbs(); renderKfStrip(); }
 
 /* ═════════ смуга кліпів ═════════ */
 function renderStrip() {
@@ -160,7 +170,7 @@ function fitView() {
   const k = Math.max(0.4, Math.min(1.2, Math.min((cv.width - 60) / (x1 - x0), (cv.height - 50) / (y1 - y0))));
   st.view = { k, x: (cv.width - (x1 - x0) * k) / 2 - x0 * k, y: (cv.height - (y1 - y0) * k) / 2 - y0 * k }; applyView();
 }
-function selectNode(id) { st.sel = id; st.selLink = null; setTimeout(updateMaskOverlay, 0); for (const d of $('cgNodes').children) d.classList?.toggle('sel', d.dataset?.id === id); drawWires(); renderInspector(); if (nodeOf(id)?.type !== 'hsl') { COLOR_VIEW.mask = null; $('clrView')?.classList.remove('mask-on'); requestDraw(); } }
+function selectNode(id) { st.sel = id; st.selLink = null; setTimeout(() => { updateMaskOverlay(); renderKfStrip(); }, 0); for (const d of $('cgNodes').children) d.classList?.toggle('sel', d.dataset?.id === id); drawWires(); renderInspector(); if (nodeOf(id)?.type !== 'hsl') { COLOR_VIEW.mask = null; $('clrView')?.classList.remove('mask-on'); requestDraw(); } }
 
 function wireGraphCanvas() {
   const cv = $('cgCanvas');
@@ -286,7 +296,7 @@ function addMenu(btn) { const r = btn.getBoundingClientRect(); popup(r.left, r.t
 function nodeMenu(id, x, y) {
   const n = nodeOf(id); if (!n) return; selectNode(id);
   const items = [];
-  if (n.type !== 'in' && n.type !== 'out') items.push({ t: n.off ? 'Увімкнути' : 'Вимкнути', on: () => { editGraph(g => { const m = g.nodes.find(q => q.id === id); m.off = !m.off; if (!m.off) delete m.off; }); renderGraph(); touch(); done('вузол вимкнено/увімкнено'); } }, { t: 'Дублювати', on: () => dupNode(id) }, { t: 'Скинути параметри', on: () => { editGraph(g => { const m = g.nodes.find(q => q.id === id); m.p = DEFAULTS[m.type](); }); renderGraph(); renderInspector(); touch(); done('вузол скинуто'); } }, { t: 'Видалити', danger: true, on: () => removeNode(id) });
+  if (n.type !== 'in' && n.type !== 'out') items.push({ t: n.off ? 'Увімкнути' : 'Вимкнути', on: () => { editGraph(g => { const m = g.nodes.find(q => q.id === id); m.off = !m.off; if (!m.off) delete m.off; }); renderGraph(); touch(); done('вузол вимкнено/увімкнено'); } }, { t: 'Дублювати', on: () => dupNode(id) }, { t: 'Скинути параметри', on: () => { editGraph(g => { const m = g.nodes.find(q => q.id === id); m.p = DEFAULTS[m.type](); delete m.kf; }); renderGraph(); renderInspector(); touch(); done('вузол скинуто'); } }, { t: 'Видалити', danger: true, on: () => removeNode(id) });
   else items.push({ t: 'Цей вузол видаляти не можна', on: () => { } });
   popup(x, y, items);
 }
@@ -297,7 +307,10 @@ function queueThumbs() { clearTimeout(thT); thT = setTimeout(() => { rawCache = 
 function raw(w) { if (!rawCache || rawCache.w !== w) rawCache = { w, c: renderRaw(w) }; return rawCache.c; }
 function paintThumbs() {
   const c = curClip(); const box = $('cgNodes'); if (!c || !box || st.page !== 'color') return;
-  const g = c.cg || newGraph(), src = raw(120); let m = null;
+  const g = animatedGraph(c.cg || newGraph(), curT()), src = raw(120); let m = null;
+  // кадр після перемотування може ще не декодуватися: чекаємо й пробуємо знову
+  const px = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, src.width, src.height).data; let lit = false; for (let i = 0; i < px.length; i += 64) if (px[i] + px[i + 1] + px[i + 2] > 12) { lit = true; break; }
+  if (!lit && (st.retry = (st.retry || 0) + 1) <= 8) { rawCache = null; clearTimeout(thT); thT = setTimeout(paintThumbs, 220); } else if (lit) st.retry = 0;
   try { m = renderThumbs(src, g, luts(), 48, 30); } catch (e) { console.warn(e); }
   if (!m) return;
   const imgOf = id => { let n = g.nodes.find(x => x.id === id), guard = 0; while (n && guard++ < 40) { const im = m.get(n.id); if (im) return im; const f = g.links.find(l => l.to === n.id && l.port === 0)?.from; n = g.nodes.find(x => x.id === f); } return m.get(g.nodes.find(x => x.type === 'in').id); };
@@ -352,9 +365,10 @@ function renderInspector() {
   const T = NODE_TYPES[n.type];
   const head = h('div', 'ci-head', `<i class="ci-dot" style="background:${T.color}"></i><div><b>Вузол «${esc(T.name)}»</b><small>${esc(sub(n).join(' · '))}</small></div>${n.type === 'in' || n.type === 'out' ? '' : '<button class="btn btn-sm" data-reset>Скинути</button>'}`);
   box.appendChild(head);
-  head.querySelector('[data-reset]')?.addEventListener('click', () => { editGraph((gr, cl) => { const m = gr.nodes.find(q => q.id === n.id); m.p = DEFAULTS[m.type](); }); renderInspector(); renderGraph(); touch(); done('вузол скинуто'); });
+  head.querySelector('[data-reset]')?.addEventListener('click', () => { editGraph((gr, cl) => { const m = gr.nodes.find(q => q.id === n.id); m.p = DEFAULTS[m.type](); delete m.kf; }); renderInspector(); renderGraph(); touch(); done('вузол скинуто'); });
   const P = () => nodeOf(n.id)?.p || n.p;
-  const set = (fn, label) => (v) => { editGraph(() => { const m = nodeOf(n.id) || n; fn(m.p, v); }); touch(); renderGraphLight(n.id); };
+  selId = n.id;
+  const set = path => v => { writeParam(n.id, path, v); touch(); renderGraphLight(n.id); };
   if (n.type === 'in') box.appendChild(h('p', 'hint', 'Вхід — це кадр кліпа до будь-яких змін. Від його кружечка тягніть лінію до першого вузла корекції.'));
   else if (n.type === 'out') box.appendChild(h('p', 'hint', 'Вихід — це те, що побачить глядач і що потрапить в експорт. Усе, що не з’єднано з виходом, на кадр не впливає.'));
   else if (n.type === 'prim') primInsp(box, n, P, set);
@@ -369,24 +383,37 @@ function renderInspector() {
 // оновлюємо лише підпис вузла (без повної перебудови, щоб не збивати перетягування)
 function renderGraphLight(id) { const n = nodeOf(id), d = $('cgNodes')?.querySelector(`[data-id="${id}"]`); if (!n || !d) return; const [a, b] = sub(n); d.querySelector('.cn-t span').textContent = a; d.querySelector('.cn-t small').textContent = b; d.classList.toggle('idle', nodeNeutral(n) && !n.off); }
 
-function slider(label, v, min, max, step, fmt, onInput, def = null) {
-  const row = h('div', 'crow'), id = 'cs' + Math.random().toString(36).slice(2, 7);
+function kfButton(paths, labelText) {
+  const b = h('button', 'kfb'); b.type = 'button'; b.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1 11 6 6 11 1 6Z"/></svg>';
+  const state = () => { const n = nodeOf(selId); const t = curT(); const any = paths.some(q => n?.kf?.[q]), on_ = paths.some(q => n && kfAt(n, q, t)); b.classList.toggle('anim', any && !on_); b.classList.toggle('on', on_); b.setAttribute('aria-pressed', on_); b.title = on_ ? 'Видалити ключовий кадр тут' : 'Додати ключовий кадр у цьому місці'; b.setAttribute('aria-label', `${labelText}: ${on_ ? 'видалити ключовий кадр' : 'додати ключовий кадр'}`); };
+  b.addEventListener('click', () => {
+    const t = curT(); editGraph(() => { const m = nodeOf(selId); const on_ = paths.some(q => kfAt(m, q, t)); for (const q of paths) { if (on_) kfRemove(m, q, t); else kfSet(m, q, t, getPath(m, q)); } });
+    state(); renderKfStrip(); touch(); done(`ключовий кадр: ${labelText}`);
+  });
+  b._state = state; state(); return b;
+}
+function slider(label, v, min, max, step, fmt, onInput, def = null, path = null) {
+  const row = h('div', 'crow' + (path ? ' kf' : '')), id = 'cs' + Math.random().toString(36).slice(2, 7);
   row.innerHTML = `<label for="${id}">${esc(label)}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}"><output>${fmt(v)}</output>`;
   const inp = row.querySelector('input'), out = row.querySelector('output'); paintRanges(row);
-  inp.addEventListener('input', () => { const x = +inp.value; out.textContent = fmt(x); onInput(x); });
+  let kb = null; if (path) { kb = kfButton([path], label); row.appendChild(kb); inp.dataset.path = path; }
+  inp.addEventListener('input', () => { const x = +inp.value; out.textContent = fmt(x); onInput(x); kb?._state(); });
   inp.addEventListener('change', () => done(label));
   const reset = () => { if (def == null) return; inp.value = def; out.textContent = fmt(def); inp.dispatchEvent(new Event('input')); paintRanges(row); done(label); };
   row.querySelector('label').addEventListener('dblclick', reset); inp.addEventListener('dblclick', reset);
+  row._refresh = () => { if (!path) return; const x = valAt(selId, path); inp.value = x; out.textContent = fmt(x); paintRanges(row); kb._state(); };
   return row;
 }
 const pct = v => Math.round(v * 100) + '%';
 
 // колесо кольору: кружечок на колі задає відтінок і силу, повзунок знизу — рівень
-function wheel(title, get, setW, tip) {
-  const el = h('div', 'wheel'), w = get();
-  el.innerHTML = `<div class="wh-ring" role="group" aria-label="${esc(title)}: колір (стрілки рухають точку, подвійний клік скидає)" tabindex="0" data-tip="${esc(tip)}"><i class="wh-puck"></i></div><b>${esc(title)}</b><input type="range" min="-1" max="1" step="0.01" value="${w.l}" aria-label="${esc(title)}: рівень"><small>${sgn(w.l)}</small>`;
+function wheel(title, key, tip) {
+  const el = h('div', 'wheel'), P_ = k => `p.${key}.${k}`, get = () => ({ x: valAt(selId, P_('x')), y: valAt(selId, P_('y')), l: valAt(selId, P_('l')) }), w = get();
+  el.innerHTML = `<div class="wh-ring" role="group" aria-label="${esc(title)}: колір (стрілки рухають точку, подвійний клік скидає)" tabindex="0" data-tip="${esc(tip)}"><i class="wh-puck"></i></div><div class="wh-t"><b>${esc(title)}</b></div><input type="range" min="-1" max="1" step="0.01" value="${w.l}" aria-label="${esc(title)}: рівень"><small>${sgn(w.l)}</small>`;
   const ring = el.querySelector('.wh-ring'), puck = el.querySelector('.wh-puck'), lv = el.querySelector('input'), sm = el.querySelector('small');
-  const place = () => { const q = get(); puck.style.left = (50 + q.x * 46) + '%'; puck.style.top = (50 - q.y * 46) + '%'; el.classList.toggle('on', !!(q.x || q.y || q.l)); };
+  const kb = kfButton([P_('x'), P_('y'), P_('l')], title); el.querySelector('.wh-t').appendChild(kb);
+  const setW = o => { for (const [k, v] of Object.entries(o)) writeParam(selId, P_(k), v); touch(); renderGraphLight(selId); kb._state(); };
+  const place = () => { const q = get(); puck.style.left = (50 + q.x * 46) + '%'; puck.style.top = (50 - q.y * 46) + '%'; el.classList.toggle('on', !!(q.x || q.y || q.l)); lv.value = q.l; sm.textContent = sgn(q.l); };
   place(); paintRanges(el);
   let dragging = false;
   const move = e => { const r = ring.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, R = r.width / 2 * 0.92; let x = (e.clientX - cx) / R, y = -(e.clientY - cy) / R; const L = Math.hypot(x, y); if (L > 1) { x /= L; y /= L; } setW({ x: r2(x), y: r2(y) }); place(); };
@@ -395,41 +422,41 @@ function wheel(title, get, setW, tip) {
   ring.addEventListener('pointerup', () => { if (dragging) { dragging = false; done(title); } });
   ring.addEventListener('dblclick', () => { setW({ x: 0, y: 0 }); place(); done(title); });
   ring.addEventListener('keydown', e => { const d = { ArrowLeft: [-0.05, 0], ArrowRight: [0.05, 0], ArrowUp: [0, 0.05], ArrowDown: [0, -0.05] }[e.key]; if (!d) return; e.preventDefault(); const q = get(); setW({ x: r2(Math.max(-1, Math.min(1, q.x + d[0]))), y: r2(Math.max(-1, Math.min(1, q.y + d[1]))) }); place(); done(title); });
-  lv.addEventListener('input', () => { setW({ l: +lv.value }); sm.textContent = sgn(+lv.value); place(); }); lv.addEventListener('change', () => done(title)); lv.addEventListener('dblclick', () => { lv.value = 0; lv.dispatchEvent(new Event('input')); done(title); });
+  lv.addEventListener('input', () => { setW({ l: +lv.value }); place(); }); lv.addEventListener('change', () => done(title)); lv.addEventListener('dblclick', () => { lv.value = 0; lv.dispatchEvent(new Event('input')); done(title); });
+  el._refresh = () => { place(); kb._state(); };
   return el;
 }
 function primInsp(box, n, P, set) {
-  const wset = key => w => { editGraph(() => { Object.assign((nodeOf(n.id) || n).p[key], w); }); touch(); renderGraphLight(n.id); };
   const auto = h('div', 'crow auto'); auto.innerHTML = `<button class="btn btn-sm btn-block" data-tip="Підбирає яскравість, контраст і баланс білого за поточним кадром">${icon('wand')}Авто-корекція кадру</button>`; auto.querySelector('button').addEventListener('click', () => autoFix(n)); box.appendChild(auto);
   const ws = h('div', 'wheels');
   const defs = [['lift', 'Тіні', 'Колір і яскравість найтемніших ділянок'], ['gamma', 'Півтони', 'Середні тони: більшість кадру'], ['gain', 'Світла', 'Найяскравіші ділянки'], ['offset', 'Зсув', 'Підсвічує увесь кадр одним кольором']];
-  for (const [k, t, tip] of defs) ws.appendChild(wheel(t, () => P()[k], wset(k), tip));
+  for (const [k, t, tip] of defs) ws.appendChild(wheel(t, k, tip));
   box.appendChild(ws);
   const sec = h('div', 'csec', '<div class="csh">Тон</div>'); box.appendChild(sec);
-  const S_ = (l, k, a, b, st_, f, d) => sec.appendChild(slider(l, P()[k], a, b, st_, f, set((p, v) => { p[k] = v; }), d));
+  const S_ = (l, k, a, b, st_, f, d) => sec.appendChild(slider(l, valAt(n.id, 'p.' + k), a, b, st_, f, set('p.' + k), d, 'p.' + k));
   S_('Експозиція', 'exp', -3, 3, 0.05, sgn, 0); S_('Контраст', 'con', 0, 2, 0.01, v => pct(v), 1); S_('Світла (ділянки)', 'hi', -1, 1, 0.01, v => sgn(v * 100), 0); S_('Тіні (ділянки)', 'sh', -1, 1, 0.01, v => sgn(v * 100), 0);
   const c2 = h('div', 'csec', '<div class="csh">Колір</div>'); box.appendChild(c2);
-  const C_ = (l, k, a, b, st_, f, d) => c2.appendChild(slider(l, P()[k], a, b, st_, f, set((p, v) => { p[k] = v; }), d));
+  const C_ = (l, k, a, b, st_, f, d) => c2.appendChild(slider(l, valAt(n.id, 'p.' + k), a, b, st_, f, set('p.' + k), d, 'p.' + k));
   C_('Температура', 'temp', -1, 1, 0.01, v => sgn(v * 100), 0); C_('Відтінок', 'tint', -1, 1, 0.01, v => sgn(v * 100), 0); C_('Насиченість', 'sat', 0, 2, 0.01, v => pct(v), 1);
 }
 function fxInsp(box, n, set) {
-  const sec = h('div', 'csec', '<div class="csh">Ефекти</div>'); box.appendChild(sec); const p = (nodeOf(n.id) || n).p;
-  sec.appendChild(slider('Віньєтка', p.vig, 0, 1, 0.01, pct, set((q, v) => { q.vig = v; }), 0)); sec.appendChild(slider('Розмір світлої зони', p.vigSize, 0.1, 1, 0.01, pct, set((q, v) => { q.vigSize = v; }), 0.55));
-  sec.appendChild(slider('Зерно плівки', p.grain, 0, 1, 0.01, pct, set((q, v) => { q.grain = v; }), 0)); sec.appendChild(slider('Сяйво світлих ділянок', p.glow, 0, 1, 0.01, pct, set((q, v) => { q.glow = v; }), 0)); sec.appendChild(slider('Вицвілі чорні', p.fade, 0, 1, 0.01, pct, set((q, v) => { q.fade = v; }), 0));
+  const sec = h('div', 'csec', '<div class="csh">Ефекти</div>'); box.appendChild(sec);
+  const F_ = (l, k, a, b, st_, f, d) => sec.appendChild(slider(l, valAt(n.id, 'p.' + k), a, b, st_, f, set('p.' + k), d, 'p.' + k));
+  F_('Віньєтка', 'vig', 0, 1, 0.01, pct, 0); F_('Розмір світлої зони', 'vigSize', 0.1, 1, 0.01, pct, 0.55); F_('Зерно плівки', 'grain', 0, 1, 0.01, pct, 0); F_('Сяйво світлих ділянок', 'glow', 0, 1, 0.01, pct, 0); F_('Вицвілі чорні', 'fade', 0, 1, 0.01, pct, 0);
   box.appendChild(h('p', 'hint', 'Зерно й віньєтка рахуються так само в експорті. Зерно трохи «ворушиться» на кожному кадрі, як справжня плівка.'));
 }
 function mixInsp(box, n, P, set) {
   const sec = h('div', 'csec', '<div class="csh">Змішування двох гілок</div>'); box.appendChild(sec);
   const sel = h('div', 'crow sel'); sel.innerHTML = `<label>Режим</label><select class="input" aria-label="Режим змішування">${Object.entries(MIX_MODES).map(([k, v]) => `<option value="${k}"${P().mode === k ? ' selected' : ''}>${v}</option>`).join('')}</select>`;
   sel.querySelector('select').addEventListener('change', e => { editGraph(() => { (nodeOf(n.id) || n).p.mode = e.target.value; }); touch(); renderGraph(); done('режим змішування'); }); sec.appendChild(sel);
-  sec.appendChild(slider('Сила', P().amount, 0, 1, 0.01, pct, set((p, v) => { p.amount = v; }), 0.5));
+  sec.appendChild(slider('Сила', valAt(n.id, 'p.amount'), 0, 1, 0.01, pct, set('p.amount'), 0.5, 'p.amount'));
   box.appendChild(h('p', 'hint', 'Верхній вхід — основа, нижній — шар, який накладається. Зʼєднайте дві гілки з цим вузлом і оберіть режим, наприклад «Екран» для світіння.'));
 }
 function lutInsp(box, n, P, set) {
   const sec = h('div', 'csec', '<div class="csh">Кольорова схема (LUT)</div>'); box.appendChild(sec);
   const list = luts(), r = h('div', 'crow sel'); r.innerHTML = `<label>Схема</label><select class="input" aria-label="Кольорова схема LUT"><option value="">Не вибрано</option>${list.map(l => `<option value="${esc(l.id)}"${P().lut === l.id ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select>`;
   r.querySelector('select').addEventListener('change', e => { editGraph(() => { (nodeOf(n.id) || n).p.lut = e.target.value || null; }); touch(); renderGraphLight(n.id); done('LUT'); }); sec.appendChild(r);
-  sec.appendChild(slider('Сила', P().mix, 0, 1, 0.01, pct, set((p, v) => { p.mix = v; }), 1));
+  sec.appendChild(slider('Сила', valAt(n.id, 'p.mix'), 0, 1, 0.01, pct, set('p.mix'), 1, 'p.mix'));
   const up = h('div', 'crow'); up.innerHTML = `<button class="btn btn-sm btn-block">${icon('upload')}Додати файл .cube</button><input type="file" accept=".cube" hidden>`; const fi = up.querySelector('input');
   up.querySelector('button').addEventListener('click', () => fi.click());
   fi.addEventListener('change', async () => {
@@ -441,16 +468,46 @@ function lutInsp(box, n, P, set) {
 }
 function hslInsp(box, n, P, set) {
   const sel = h('div', 'csec', '<div class="csh">Що виділити</div>'); box.appendChild(sel);
-  const hue = P().hue; const hr = slider('Колір (відтінок)', hue, 0, 360, 1, v => v + '°', set((p, v) => { p.hue = v; }), 30); hr.classList.add('hue'); sel.appendChild(hr);
-  const S_ = (l, k, a, b, st_, f, d) => sel.appendChild(slider(l, P()[k], a, b, st_, f, set((p, v) => { p[k] = v; }), d));
+  const hr = slider('Колір (відтінок)', valAt(n.id, 'p.hue'), 0, 360, 1, v => v + '°', set('p.hue'), 30, 'p.hue'); hr.classList.add('hue'); sel.appendChild(hr);
+  const S_ = (l, k, a, b, st_, f, d) => sel.appendChild(slider(l, valAt(n.id, 'p.' + k), a, b, st_, f, set('p.' + k), d, 'p.' + k));
   S_('Ширина кольору', 'width', 5, 360, 1, v => v + '°', 60); S_('Насиченість від', 'smin', 0, 1, 0.01, pct, 0.15); S_('Насиченість до', 'smax', 0, 1, 0.01, pct, 1); S_('Яскравість від', 'lmin', 0, 1, 0.01, pct, 0); S_('Яскравість до', 'lmax', 0, 1, 0.01, pct, 1); S_('М’якість країв', 'soft', 0, 1, 0.01, pct, 0.4);
   const tg = h('div', 'ctog'); tg.innerHTML = `<label><input type="checkbox" data-inv${P().inv ? ' checked' : ''}> Усе, крім вибраного</label><label><input type="checkbox" data-mask${COLOR_VIEW.mask === n.id ? ' checked' : ''}> Показати маску</label>`;
   tg.querySelector('[data-inv]').addEventListener('change', e => { editGraph(() => { (nodeOf(n.id) || n).p.inv = e.target.checked; }); touch(); renderGraphLight(n.id); done('інверсія маски'); });
   tg.querySelector('[data-mask]').addEventListener('change', e => { COLOR_VIEW.mask = e.target.checked ? n.id : null; requestDraw(); }); sel.appendChild(tg);
   const ad = h('div', 'csec', '<div class="csh">Що змінити у вибраному</div>'); box.appendChild(ad);
-  const A_ = (l, k, a, b, st_, f, d) => ad.appendChild(slider(l, P()[k], a, b, st_, f, set((p, v) => { p[k] = v; }), d));
+  const A_ = (l, k, a, b, st_, f, d) => ad.appendChild(slider(l, valAt(n.id, 'p.' + k), a, b, st_, f, set('p.' + k), d, 'p.' + k));
   A_('Зсув відтінку', 'dh', -180, 180, 1, sgn, 0); A_('Насиченість', 'ds', 0, 3, 0.01, pct, 1); A_('Яскравість', 'dl', -1, 1, 0.01, v => sgn(v * 100), 0); A_('Сила дії', 'amount', 0, 1, 0.01, pct, 1);
   box.appendChild(h('p', 'hint', `Піпетка над кадром (кнопка ${'«Піпетка»'}) сама заповнить виділення за кольором, на який ви натиснете.`));
+}
+
+/* ═════════ смужка ключових кадрів під кадром ═════════ */
+const fmtT = t => { const m = Math.floor(t / 60), x = t - m * 60; return String(m).padStart(2, '0') + ':' + x.toFixed(1).padStart(4, '0'); };
+function wireKfStrip() {
+  const strip = $('kfStrip'); if (!strip) return;
+  strip.innerHTML = `<button class="btn btn-sm btn-icon" id="kfPrev" aria-label="Попередній ключовий кадр" data-tip="Попередній ключовий кадр">${icon('chevL')}</button><div class="kf-track" id="kfTrack" role="slider" tabindex="0" aria-label="Позиція в кліпі: клікніть або тягніть"><i class="kf-head"></i></div><button class="btn btn-sm btn-icon" id="kfNext" aria-label="Наступний ключовий кадр" data-tip="Наступний ключовий кадр">${icon('chevR')}</button><span class="kf-info" id="kfInfo"></span>`;
+  const track = $('kfTrack'); let drag = false;
+  const seekTo = e => { const l = curLayout(); if (!l) return; const r = track.getBoundingClientRect(), f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); seek(l.start + f * (l.end - l.start - 0.001)); };
+  track.addEventListener('pointerdown', e => { const mk = e.target.closest('.kf-mark'); if (mk) { const l = curLayout(); if (l) seek(l.start + +mk.dataset.t); e.preventDefault(); return; } drag = true; track.setPointerCapture(e.pointerId); seekTo(e); });
+  track.addEventListener('pointermove', e => { if (drag) seekTo(e); }); track.addEventListener('pointerup', () => { drag = false; });
+  track.addEventListener('keydown', e => { const l = curLayout(); if (!l) return; const d = { ArrowLeft: -1 / 30, ArrowRight: 1 / 30 }[e.key]; if (d) { e.preventDefault(); seek(S.t + d * (e.shiftKey ? 10 : 1)); } });
+  const jump = dir => { const l = curLayout(), n = nodeOf(st.sel); if (!l || !n) return; const t = curT(), ts = kfTimes(n), q = dir < 0 ? [...ts].reverse().find(x => x < t - 0.02) : ts.find(x => x > t + 0.02); if (q !== undefined) seek(l.start + q); };
+  $('kfPrev').addEventListener('click', () => jump(-1)); $('kfNext').addEventListener('click', () => jump(1));
+}
+function renderKfStrip() {
+  const strip = $('kfStrip'); if (!strip) return; strip.hidden = st.page !== 'color'; if (st.page !== 'color') return;
+  const l = curLayout(), track = $('kfTrack'), n = nodeOf(st.sel); if (!track) return;
+  for (const m of [...track.querySelectorAll('.kf-mark')]) m.remove();
+  const dur = l ? Math.max(0.01, l.end - l.start) : 1, ts = n && l ? kfTimes(n) : [];
+  for (const t of ts) { const b = h('b', 'kf-mark'); b.dataset.t = t; b.style.left = Math.min(100, t / dur * 100) + '%'; b.title = 'Ключовий кадр ' + fmtT(t); track.appendChild(b); }
+  $('kfPrev').disabled = !ts.some(x => x < curT() - 0.02); $('kfNext').disabled = !ts.some(x => x > curT() + 0.02);
+  strip.classList.toggle('has', ts.length > 0); updateKfHead();
+}
+function updateKfHead() {
+  const l = curLayout(), head = document.querySelector('#kfTrack .kf-head'), info = $('kfInfo'); if (!head) return;
+  const dur = l ? Math.max(0.01, l.end - l.start) : 1, t = curT(); head.style.left = Math.min(100, t / dur * 100) + '%';
+  if (info) info.textContent = `${fmtT(t)} / ${fmtT(dur)}`;
+  const tr = $('kfTrack'); tr.setAttribute('aria-valuemin', '0'); tr.setAttribute('aria-valuemax', dur.toFixed(1)); tr.setAttribute('aria-valuenow', t.toFixed(1)); tr.setAttribute('aria-valuetext', `${fmtT(t)} з ${fmtT(dur)}`);
+  const n = nodeOf(st.sel), ts = n ? kfTimes(n) : []; if ($('kfPrev')) { $('kfPrev').disabled = !ts.some(x => x < t - 0.02); $('kfNext').disabled = !ts.some(x => x > t + 0.02); }
 }
 
 /* ═════════ авто-корекція ═════════ */
@@ -461,7 +518,7 @@ function autoFix(n) {
   mr /= N; mg /= N; mb /= N; sat /= N; const sorted = Float32Array.from(ys).sort(), lo = sorted[Math.floor(N * 0.03)], hi = sorted[Math.floor(N * 0.97)], mean = ys.reduce((a, b) => a + b, 0) / N;
   const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
   const patch = { exp: r2(clampN(Math.log2(0.42 / Math.max(0.04, mean)) * 0.8, -1.5, 1.5)), con: r2(clampN(0.88 / Math.max(0.2, hi - lo), 0.9, 1.35)), temp: r2(clampN((mb - mr) / Math.max(0.05, mb + mr) * 2.2, -0.5, 0.5)), sat: r2(sat < 0.3 ? 1.12 : 1) };
-  editGraph(() => { Object.assign((nodeOf(n.id) || n).p, patch); }); renderInspector(); renderGraphLight(n.id); touch(); done('авто-корекція');
+  for (const [k, v] of Object.entries(patch)) writeParam(n.id, 'p.' + k, v); renderInspector(); renderGraphLight(n.id); touch(); done('авто-корекція');
   toast('Кадр вирівняно. Підправте повзунками за смаком', 'ok');
 }
 
@@ -473,8 +530,8 @@ function maskInsp(box, n) {
   sel.querySelector('select').addEventListener('change', e => { editGraph(() => { const m = nodeOf(n.id) || n; if (e.target.value === 'none') delete m.mask; else m.mask = { ...(m.mask || maskDefault()), type: e.target.value }; }); renderInspector(); touch(); done('маска'); });
   sec.appendChild(sel);
   const m = cur(); if (!m) { sec.appendChild(h('p', 'hint', 'Маска обмежує дію вузла колом, прямокутником або градієнтом. Наприклад, підсвітити обличчя чи затемнити небо.')); return; }
-  const set = k => v => { editGraph(() => { (nodeOf(n.id) || n).mask[k] = v; }); touch(); updateMaskOverlay(); };
-  const S_ = (l, k, a, b, st_, f, d) => sec.appendChild(slider(l, m[k], a, b, st_, f, set(k), d));
+  const set = k => v => { writeParam(n.id, 'mask.' + k, v); touch(); updateMaskOverlay(); };
+  const S_ = (l, k, a, b, st_, f, d) => sec.appendChild(slider(l, valAt(n.id, 'mask.' + k), a, b, st_, f, set(k), d, 'mask.' + k));
   S_('Центр по горизонталі', 'x', 0, 1, 0.01, pct, 0.5); S_('Центр по вертикалі', 'y', 0, 1, 0.01, pct, 0.5);
   if (m.type !== 'linear') S_('Ширина', 'w', 0.05, 1.5, 0.01, pct, 0.5);
   S_(m.type === 'linear' ? 'Довжина переходу' : 'Висота', 'h', 0.05, 1.5, 0.01, pct, 0.5); S_('Поворот', 'rot', -180, 180, 1, v => v + '°', 0); S_('М\u2019якість краю', 'soft', 0, 1, 0.01, pct, 0.35);
@@ -493,20 +550,20 @@ function updateMaskOverlay() {
     hd.addEventListener('pointerdown', e => { mode = 'size'; hd.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation(); });
     const move = e => {
       if (!mode) return; const r = rect(), n2 = nodeOf(st.sel); if (!n2?.mask) return; const mm = n2.mask;
-      if (mode === 'move') { editGraph(() => { const q = nodeOf(st.sel).mask; q.x = r2(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width - start.dx))); q.y = r2(Math.max(0, Math.min(1, (e.clientY - r.top) / r.height - start.dy))); }); }
-      else { const cx = r.left + mm.x * r.width, cy = r.top + mm.y * r.height, a = -mm.rot * Math.PI / 180, vx = e.clientX - cx, vy = e.clientY - cy, lx = vx * Math.cos(a) - vy * Math.sin(a), ly = vx * Math.sin(a) + vy * Math.cos(a); editGraph(() => { const q = nodeOf(st.sel).mask; q.w = r2(Math.max(0.05, Math.min(1.5, Math.abs(lx) * 2 / r.width))); q.h = r2(Math.max(0.05, Math.min(1.5, Math.abs(ly) * 2 / r.height))); }); }
+      if (mode === 'move') { writeParam(st.sel, 'mask.x', r2(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width - start.dx)))); writeParam(st.sel, 'mask.y', r2(Math.max(0, Math.min(1, (e.clientY - r.top) / r.height - start.dy)))); }
+      else { const cx = r.left + mm.x * r.width, cy = r.top + mm.y * r.height, a = -mm.rot * Math.PI / 180, vx = e.clientX - cx, vy = e.clientY - cy, lx = vx * Math.cos(a) - vy * Math.sin(a), ly = vx * Math.sin(a) + vy * Math.cos(a); writeParam(st.sel, 'mask.w', r2(Math.max(0.05, Math.min(1.5, Math.abs(lx) * 2 / r.width)))); writeParam(st.sel, 'mask.h', r2(Math.max(0.05, Math.min(1.5, Math.abs(ly) * 2 / r.height)))); }
       touch(); updateMaskOverlay();
     };
     const end = () => { if (mode) { mode = null; renderInspector(); done('маска'); } };
     mk.addEventListener('pointermove', move); hd.addEventListener('pointermove', move); mk.addEventListener('pointerup', end); hd.addEventListener('pointerup', end);
-    mk.addEventListener('keydown', e => { const d = { ArrowLeft: [-0.01, 0], ArrowRight: [0.01, 0], ArrowUp: [0, -0.01], ArrowDown: [0, 0.01] }[e.key]; if (!d) return; e.preventDefault(); editGraph(() => { const q = nodeOf(st.sel).mask; q.x = r2(Math.max(0, Math.min(1, q.x + d[0]))); q.y = r2(Math.max(0, Math.min(1, q.y + d[1]))); }); touch(); updateMaskOverlay(); done('маска'); });
+    mk.addEventListener('keydown', e => { const d = { ArrowLeft: [-0.01, 0], ArrowRight: [0.01, 0], ArrowUp: [0, -0.01], ArrowDown: [0, 0.01] }[e.key]; if (!d) return; e.preventDefault(); writeParam(st.sel, 'mask.x', r2(Math.max(0, Math.min(1, valAt(st.sel, 'mask.x') + d[0])))); writeParam(st.sel, 'mask.y', r2(Math.max(0, Math.min(1, valAt(st.sel, 'mask.y') + d[1])))); touch(); updateMaskOverlay(); done('маска'); });
   }
   el.hidden = false;
   const cr = cv.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
   Object.assign(el.style, { left: cr.left - wr.left + 'px', top: cr.top - wr.top + 'px', width: cr.width + 'px', height: cr.height + 'px' });
-  const mk = el.querySelector('.mk'), lin = m.type === 'linear';
-  mk.className = 'mk ' + m.type; mk.style.left = (m.x * 100) + '%'; mk.style.top = (m.y * 100) + '%';
-  mk.style.width = (lin ? 1.2 : m.w) * 100 + '%'; mk.style.height = (lin ? m.h : m.h) * 100 + '%'; mk.style.transform = `translate(-50%,-50%) rotate(${m.rot}deg)`;
+  const am = { ...m, ...Object.fromEntries(['x', 'y', 'w', 'h', 'rot'].map(k => ['' + k, valAt(st.sel, 'mask.' + k)])) }, mk = el.querySelector('.mk'), lin = m.type === 'linear';
+  mk.className = 'mk ' + m.type; mk.style.left = (am.x * 100) + '%'; mk.style.top = (am.y * 100) + '%';
+  mk.style.width = (lin ? 1.2 : am.w) * 100 + '%'; mk.style.height = am.h * 100 + '%'; mk.style.transform = `translate(-50%,-50%) rotate(${am.rot}deg)`;
 }
 window.addEventListener('resize', () => { if (st.page === 'color') requestAnimationFrame(updateMaskOverlay); });
 

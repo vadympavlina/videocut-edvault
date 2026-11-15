@@ -90,6 +90,26 @@ await step('довгий граф: «Вхід» не затирається пр
     return { worst, wl, diffR }; })()`);
   assert.ok(r.worst <= 2, 'сила 0%: кадр як оригінал, відхилення ' + r.worst); assert.ok(r.wl <= 2, 'ліва половина = оригінал: ' + r.wl); assert.ok(r.diffR > 500, 'права половина з корекцією: ' + r.diffR);
 });
+await step('роздільність не впливає на вигляд: ефекти (сяйво, віньєтка) однакові у двох розмірах кадру', async () => {
+  const r = await page.evaluate(`(() => {
+    const draw = (W, H) => { const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d', { willReadFrequently: true }); const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, '#203050'); gr.addColorStop(1, '#604020'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      g.fillStyle = '#fff'; for (const [x, y, r] of [[0.3, 0.4, 0.05], [0.7, 0.6, 0.08], [0.5, 0.2, 0.03]]) { g.beginPath(); g.arc(x * W, y * H, r * H, 0, 7); g.fill(); } return [cv, g]; };
+    const mk = () => { const g = C.newGraph(); g.nodes[1].type = 'fx'; g.nodes[1].p = { ...C.DEFAULTS.fx(), vig: 0.6, glow: 1 }; return C.repairGraph(g); };
+    const small = draw(160, 90), big = draw(640, 360); C.applyGraph(small[1], 160, 90, mk(), []); C.applyGraph(big[1], 640, 360, mk(), []);
+    const down = document.createElement('canvas'); down.width = 160; down.height = 90; const dg = down.getContext('2d', { willReadFrequently: true }); dg.imageSmoothingQuality = 'high'; dg.drawImage(big[0], 0, 0, 160, 90);
+    const a = small[1].getImageData(0, 0, 160, 90).data, b = dg.getImageData(0, 0, 160, 90).data; let s = 0, n = 0; for (let i = 0; i < a.length; i += 4) { s += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]); n += 3; }
+    return { mean: s / n }; })()`);
+  assert.ok(r.mean < 2, 'середня розбіжність між розмірами ' + r.mean.toFixed(2) + ' з 255');
+});
+await step('втрата контексту WebGL: наступні кадри відновлюються, криві не «забуваються»', async () => {
+  const r = await page.evaluate(`(async () => { ${SET}
+    const g = C.repairGraph((${prim('{}')})(C)); g.nodes[1].type = 'curves'; g.nodes[1].p = { m: [[0, 0], [0.3, 0.15], [0.7, 0.85], [1, 1]], r: [[0, 0], [1, 1]], g: [[0, 0], [1, 1]], b: [[0, 0], [1, 1]] };
+    const run = () => { ctx.putImageData(img, 0, 0); const ok = C.applyGraph(ctx, W, H, g, []); const d = ctx.getImageData(0, 0, W, H).data; return { ok, px: Array.from(d.slice((10 * W + 24) * 4, (10 * W + 24) * 4 + 3)) }; };
+    const a = run(); C.__gpu().gl.getExtension('WEBGL_lose_context').loseContext(); await new Promise(r => setTimeout(r, 120));
+    let b = run(); let tries = 0; while (!b.ok && tries++ < 5) { await new Promise(r => setTimeout(r, 80)); b = run(); }
+    return { a, b, tries }; })()`);
+  assert.ok(r.a.ok && r.b.ok, 'граф знову застосовується: ' + JSON.stringify(r)); assert.deepEqual(r.a.px, r.b.px, 'результат той самий після відновлення');
+});
 await step('нейтральний граф нічого не змінює й повертає false', async () => {
   const r = await page.evaluate(`(() => { ${SET} const before = Array.from(src); const ok = C.applyGraph(ctx, W, H, C.newGraph(), []); const out = ctx.getImageData(0, 0, W, H).data; return { ok, same: before.every((v, i) => v === out[i]) }; })()`);
   assert.equal(r.ok, false); assert.ok(r.same);

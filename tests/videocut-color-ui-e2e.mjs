@@ -270,6 +270,40 @@ await step('зміна швидкості кліпа масштабує ключ
   assert.equal(r.sp, 2); assert.ok(Math.abs(r.keys.at(-1)[0] - 2.5) < 0.02 && r.keys[0][0] === 0, 'ключі вдвічі ближче: ' + JSON.stringify(r.keys));
   await undo(); await settle();
 });
+// ── окрема сторінка: кілька кліпів, перехід, фото й вертикальний формат ──
+const p2 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } });
+p2.on('pageerror', e => errors.push('p2 ' + e.message)); p2.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('p2 ' + m.text()); });
+await p2.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+await p2.goto(`http://localhost:${port}/index.html`); await p2.waitForFunction(() => window.VideoCut);
+const PNG = join(tmp, 'photo.png'); execFileSync(process.env.FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'gradients=s=800x600:c0=0x203a6a:c1=0xe8a060:x0=0:y0=0:x1=800:y1=0:nb_colors=2:d=1:r=1', '-frames:v', '1', PNG]);
+const mean2 = () => p2.evaluate(() => { const cv = document.getElementById('pv'), g = cv.getContext('2d'), w = cv.width, h = cv.height; const d = g.getImageData(Math.round(w * 0.3), Math.round(h * 0.3), Math.round(w * 0.4), Math.round(h * 0.4)).data; let r = 0, gg = 0, b = 0; const k = d.length / 4; for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; } return [r / k, gg / k, b / k]; });
+const lum2 = async t => { await p2.evaluate(tt => window.VideoCut.seek(tt), t); await p2.waitForTimeout(650); const m = await mean2(); return m[0] + m[1] + m[2]; };
+await step('перехід між кліпами з різним кольором: на межі немає стрибка, посередині — плавне змішування', async () => {
+  await p2.setInputFiles('#fileInput', [VID]); await p2.waitForFunction(() => window.VideoCut.S.project.clips.length === 1, null, { timeout: 15000 });
+  await p2.setInputFiles('#fileInput', [VID]); await p2.waitForFunction(() => window.VideoCut.S.project.clips.length === 2, null, { timeout: 15000 }); await p2.waitForTimeout(1500);
+  const info = await p2.evaluate(() => { const P = window.VideoCut.S.project, L = window.VideoCut.layout(); const g = n => ({ v: 1, nodes: [{ id: 'in', type: 'in', x: 0, y: 0, p: {} }, { id: 'prim1', type: 'prim', x: 200, y: 0, p: { lift: { x: 0, y: 0, l: 0 }, gamma: { x: 0, y: 0, l: 0 }, gain: { x: 0, y: 0, l: 0 }, offset: { x: 0, y: 0, l: 0 }, exp: n, con: 1, sat: 1, temp: 0, tint: 0, hi: 0, sh: 0 } }, { id: 'out', type: 'out', x: 400, y: 0, p: { amount: 1 } }], links: [{ from: 'in', to: 'prim1', port: 0 }, { from: 'prim1', to: 'out', port: 0 }] });
+    P.clips[0].cg = g(1.3); P.clips[1].tr = { type: 'fade', d: 1 }; window.VideoCut.commit('тест'); return { start: L[1].start }; });
+  const T = info.start, before = await lum2(T - 0.08), atStart = await lum2(T + 0.03), mid = await lum2(T + 0.5), late = await lum2(T + 0.97), after = await lum2(T + 1.6);
+  assert.ok(before > after + 30, `перший кліп яскравіший за другий: ${before.toFixed(0)} / ${after.toFixed(0)}`);
+  assert.ok(Math.abs(atStart - before) < 40, `на початку переходу кадр ще як у першого кліпа (без стрибка): ${before.toFixed(0)} → ${atStart.toFixed(0)}`);
+  assert.ok(mid < atStart - 8 && mid > late - 8, `посередині проміжне значення: ${atStart.toFixed(0)} > ${mid.toFixed(0)} > ${late.toFixed(0)}`);
+  assert.ok(Math.abs(late - after) < 45, `наприкінці переходу кадр як у другого кліпа: ${late.toFixed(0)} → ${after.toFixed(0)}`);
+});
+await step('фото й вертикальний формат: граф діє на картинку, маска враховує пропорції кадру', async () => {
+  const p3 = await browser.newPage({ bypassCSP: true, viewport: { width: 1440, height: 900 } }); p3.on('pageerror', e => errors.push('p3 ' + e.message));
+  await p3.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort()); await p3.goto(`http://localhost:${port}/index.html`); await p3.waitForFunction(() => window.VideoCut);
+  await p3.setInputFiles('#fileInput', [PNG]); await p3.waitForFunction(() => window.VideoCut.S.project.clips.length === 1, null, { timeout: 15000 }); await p3.waitForTimeout(1200);
+  await p3.evaluate(() => { const P = window.VideoCut.S.project; P.aspect = '9:16'; window.VideoCut.commit('формат'); });
+  await p3.click('#pageSw [data-page=color]'); await p3.waitForTimeout(900);
+  const px = async (fx, fy) => p3.evaluate(([fx, fy]) => { const cv = document.getElementById('pv'), d = cv.getContext('2d').getImageData(Math.round(cv.width * fx), Math.round(cv.height * fy), 1, 1).data; return [d[0], d[1], d[2]]; }, [fx, fy]);
+  const base = await px(0.5, 0.5), baseEdge = await px(0.5, 0.95);
+  await p3.evaluate(() => { const c = window.VideoCut.S.project.clips[0]; c.cg = { v: 1, nodes: [{ id: 'in', type: 'in', x: 0, y: 0, p: {} }, { id: 'prim1', type: 'prim', x: 200, y: 0, p: { lift: { x: 0, y: 0, l: 0 }, gamma: { x: 0, y: 0, l: 0 }, gain: { x: 0, y: 0, l: 0 }, offset: { x: 0, y: 0, l: 0 }, exp: 1.2, con: 1, sat: 1, temp: 0, tint: 0, hi: 0, sh: 0 }, mask: { type: 'ellipse', x: 0.5, y: 0.5, w: 0.5, h: 0.3, rot: 0, soft: 0.1, inv: false } }, { id: 'out', type: 'out', x: 400, y: 0, p: { amount: 1 } }], links: [{ from: 'in', to: 'prim1', port: 0 }, { from: 'prim1', to: 'out', port: 0 }] }; window.VideoCut.commit('тест'); });
+  await p3.waitForTimeout(700); const inM = await px(0.5, 0.5), outM = await px(0.5, 0.95);
+  assert.ok(inM[0] + inM[1] + inM[2] > base[0] + base[1] + base[2] + 40, `у масці фото світлішає: ${base} → ${inM}`); assert.ok(Math.abs(outM[0] - baseEdge[0]) + Math.abs(outM[1] - baseEdge[1]) < 6, `поза маскою без змін: ${baseEdge} → ${outM}`);
+  const ratio = await p3.evaluate(() => { const cv = document.getElementById('pv'); return cv.height / cv.width; }); assert.ok(ratio > 1.6, 'формат 9:16: ' + ratio);
+  await p3.close();
+});
+await p2.close();
 await step('Alt+1 повертає на «Монтаж»: бібліотека й таймлайн на місці, експорт не зачеплено', async () => {
   await p.keyboard.press('Alt+1'); await settle();
   assert.equal(await p.evaluate(() => document.body.dataset.page), 'edit');

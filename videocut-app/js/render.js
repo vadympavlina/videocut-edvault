@@ -360,7 +360,7 @@ export function renderScene(ctx, W, H, t, provider, L = layout(), opts = {}) {
       const prev = L[idx - 1];
       const tail = (opts.tailOf || tailFrame)(prev.clip);
       const pf = tail ? { src: tail, w: tail.naturalWidth || tail.width, h: tail.naturalHeight || tail.height } : null;
-      drawTransition(ctx, tr, smooth(clamp01((t - l.start) / (tr.d || 0.6))), prev, pf, l, f, W, H, t);
+      drawTransition(ctx, tr, smooth(clamp01((t - l.start) / (tr.d || 0.6))), prev, pf, l, f, W, H, t, opts);
     } else if (f && f.w && f.h) drawClipFrame(ctx, l, f, W, H, t, opts);
   }
   for (const o of p.overlays) {
@@ -381,9 +381,26 @@ export function renderScene(ctx, W, H, t, provider, L = layout(), opts = {}) {
 }
 
 // Перехід: попередній кліп «застигає» на останньому кадрі й поступається новому
-function drawTransition(ctx, tr, p, prev, pf, l, f, W, H, t) {
-  const drawNew = () => { if (f && f.w && f.h) drawClipFrame(ctx, l, f, W, H, t); };
-  const drawOld = () => { if (pf && pf.w && pf.h) drawFitted(ctx, prev.clip, pf, W, H, 1); else { ctx.fillStyle = S.project.bg || '#000'; ctx.fillRect(0, 0, W, H); } };
+// Сторона переходу з кольором (граф чи LUT) малюється на окремому полотні й лише потім кладеться на сцену:
+// інакше корекція зачепила б усе, що вже намальовано, і кліпи з різним кольором «стрибали» б на межі переходу.
+const sideCv = [null, null];
+function sideLayer(i, W, H) { const c = sideCv[i] || (sideCv[i] = document.createElement('canvas')); if (c.width !== W || c.height !== H) { c.width = W; c.height = H; } const g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.fillStyle = S.project.bg || '#000'; g.fillRect(0, 0, W, H); return [c, g]; }
+function drawTransition(ctx, tr, p, prev, pf, l, f, W, H, t, opts = {}) {
+  const colored = c => !!(c.cg || c.lut);
+  const drawNew = () => {
+    if (!(f && f.w && f.h)) return;
+    if (!colored(l.clip)) { drawClipFrame(ctx, l, f, W, H, t, opts); return; }
+    const [c, g] = sideLayer(1, W, H); drawClipFrame(g, l, f, W, H, t, opts); ctx.drawImage(c, 0, 0);
+  };
+  const drawOld = () => {
+    if (pf && pf.w && pf.h) {
+      if (!colored(prev.clip)) { drawFitted(ctx, prev.clip, pf, W, H, 1); return; }
+      const [c, g] = sideLayer(0, W, H); drawFitted(g, prev.clip, pf, W, H, 1);
+      const cl = prev.clip; if (cl.lut && S.project.luts) { const lut = S.project.luts.find(x => x.id === cl.lut.id); if (lut) applyLut(g, W, H, lut, cl.lut.mix ?? 1); }
+      if (cl.cg && !opts.colorBypass) applyGraph(g, W, H, cl.cg, S.project.luts || [], { export: !!(opts.export || opts.colorFinal), t: Math.max(0, prev.end - prev.start) });
+      ctx.drawImage(c, 0, 0);
+    } else { ctx.fillStyle = S.project.bg || '#000'; ctx.fillRect(0, 0, W, H); }
+  };
   switch (tr.type) {
     case 'black':
       if (p < 0.5) { drawOld(); ctx.fillStyle = `rgba(0,0,0,${p * 2})`; ctx.fillRect(0, 0, W, H); }

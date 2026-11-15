@@ -352,9 +352,9 @@ void main(){ vec3 c=texture(uA,vUv).rgb; vec3 cc=clamp(c,0.,1.); vec3 l=texture(
   fx: HEAD + `uniform float uVig,uVsz,uGrain,uGlow,uFade;
 float hash(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
 void main(){ vec3 c=texture(uA,vUv).rgb;
-  if(uGlow>0.){ vec3 s=vec3(0.); float w=0.; for(int i=0;i<12;i++){ float a=float(i)*.5236; for(int j=1;j<=2;j++){ vec2 off=vec2(cos(a),sin(a))*uPx*float(j)*6.; vec3 t=texture(uA,vUv+off).rgb; float k=smoothstep(.55,1.,dot(t,LU)); s+=t*k; w+=1.; } } c+=s/w*uGlow*1.4; }
+  if(uGlow>0.){ vec3 s=vec3(0.); float w=0.; for(int i=0;i<12;i++){ float a=float(i)*.5236; for(int j=1;j<=2;j++){ vec2 off=vec2(cos(a)*uPx.x/uPx.y,sin(a))*float(j)*.0085; vec3 t=texture(uA,vUv+off).rgb; float k=smoothstep(.55,1.,dot(t,LU)); s+=t*k; w+=1.; } } c+=s/w*uGlow*1.4; }
   float d=distance(vUv,vec2(.5))*1.414; c*=1.-uVig*smoothstep(uVsz,1.1,d);
-  c+=(hash(vUv/uPx*.37+uSeed)-.5)*uGrain*.18; c=c*(1.-uFade*.15)+uFade*.08; o=vec4(c,1.); }`,
+  c+=(hash(floor(vUv*vec2(1280.,720.))*.37+uSeed)-.5)*uGrain*.18; c=c*(1.-uFade*.15)+uFade*.08; o=vec4(c,1.); }`,
   maskmix: HEAD + `uniform float uShape,uSoft,uInv,uAsp; uniform vec4 uM; uniform float uRot;
 void main(){ vec3 a=texture(uA,vUv).rgb,b=texture(uB,vUv).rgb;
   vec2 p=(vec2(vUv.x,1.-vUv.y)-uM.xy)*vec2(uAsp,1.); float ca=cos(-uRot),sa=sin(-uRot); p=vec2(p.x*ca-p.y*sa,p.x*sa+p.y*ca);
@@ -383,7 +383,7 @@ class GPU {
       this.vao = gl.createVertexArray(); gl.bindVertexArray(this.vao); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       this.fbo = gl.createFramebuffer();
       this.src = this.mkTex(); this.curveTex = this.mkTex();
-      cv.addEventListener('webglcontextlost', e => { e.preventDefault(); this.gl = null; this.progs = {}; this.pool = []; this.lutCache = null; });
+      cv.addEventListener('webglcontextlost', e => { e.preventDefault(); this.gl = null; this.progs = {}; this.pool = []; this.lutCache = null; this.curveKey = null; this.size = [0, 0]; });
       return true;
     } catch (e) { console.warn('Колір: WebGL2 недоступний, колірний граф не застосовується', e); this.broken = true; return false; }
   }
@@ -493,6 +493,7 @@ class GPU {
 }
 const MAIN = new GPU(), SMALL = new GPU();
 export const gpuAvailable = () => MAIN.init();
+export const __gpu = () => MAIN; // для тестів (імітація втрати контексту)
 
 // застосовує граф до всього вмісту ctx.canvas (перегляд і експорт)
 let frameNo = 0;

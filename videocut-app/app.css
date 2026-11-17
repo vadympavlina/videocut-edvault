@@ -293,7 +293,7 @@ details.more summary:hover{color:var(--text)}
 .ov-arrow,.ov-rect{--ov:#ef4444}
 .ov-image{--ov:#0ea5e9}
 .ov-adjust{--ov:#f59e0b}
-.adj-rc{display:grid;grid-template-columns:1fr 1fr;gap:6px}.adj-rc .btn.on{background:var(--accent-light);color:var(--accent);border-color:var(--accent-border)}
+.adj-rc{display:grid;grid-template-columns:1fr 1fr;gap:6px}.adj-rc .btn{flex-direction:column;height:auto;padding:4px;gap:4px;align-items:stretch;font-size:12px}.adj-rc canvas{width:100%;aspect-ratio:16/9;border-radius:5px;background:#141414;display:block}.adj-rc .btn.on{background:var(--accent-light);color:var(--accent);border-color:var(--accent-border)}
 .it.adjl{height:24px;border:1px solid #c58a2c;color:#f3d9a8;background:linear-gradient(90deg,transparent 0,rgba(197,138,44,.85) var(--fi),rgba(197,138,44,.85) var(--fo),transparent 100%),var(--surface2)}
 :root[data-theme="light"] .it.adjl,:root:not([data-theme="dark"]) .it.adjl{color:#5a3b05}
 .cc{top:3px;height:24px;background:color-mix(in srgb,var(--cc) 22%,var(--surface));border:1px solid color-mix(in srgb,var(--cc) 60%,transparent);color:color-mix(in srgb,var(--cc) 55%,var(--text));font-weight:500}

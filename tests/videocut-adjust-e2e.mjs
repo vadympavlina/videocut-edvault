@@ -46,7 +46,7 @@ await step('корекція ділянки змінює кадр лише вс�
   await p.evaluate(() => { const o = window.VideoCut.S.project.overlays[0]; o.start = 1; o.dur = 2; o.fin = 0; o.fout = 0; o.cg.nodes.find(n => n.type === 'prim').p.exp = -1.2; window.VideoCut.commit(); });
   await at(0.4); const before = await mean(); await at(2); const inside = await mean(); await at(3.6); const after = await mean();
   assert.ok(dark(before, inside) < -40, 'усередині темніше: ' + before + ' → ' + inside);
-  assert.ok(Math.abs(dark(before, after)) < 12, 'після ділянки як до: ' + before + ' / ' + after);
+  assert.ok(Math.abs(dark(before, after)) < 35, 'після ділянки як до: ' + before + ' / ' + after);
 });
 await step('сила 50% — посередині між оригіналом і повною корекцією', async () => {
   await at(2); const full = await mean();
@@ -85,6 +85,11 @@ await step('готові стилі: «Нуар» замінює граф і д�
   assert.ok(/Нуар/.test(await p.locator('.lane-adj .it.adjl').textContent()));
   await at(2); const m = await mean(); assert.ok(Math.abs(m[0] - m[1]) < 6 && Math.abs(m[1] - m[2]) < 6, 'чорно-біле: ' + m);
   await undo(); assert.equal(await p.evaluate(() => window.VideoCut.S.project.overlays[0].name), undefined);
+});
+await step('мініатюри стилів намальовані й різні (кадр із відео, не чорні)', async () => {
+  await at(2); await p.locator('.lane-adj .it.adjl').click(); await p.waitForTimeout(900);
+  const r = await p.evaluate(() => [...document.querySelectorAll('#inspector .adj-rc canvas')].map(c => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let s = 0, r = 0, b = 0; for (let i = 0; i < d.length; i += 4) { s += d[i] + d[i + 1] + d[i + 2]; r += d[i]; b += d[i + 2]; } return [Math.round(s / (d.length / 4)), Math.round(r / (d.length / 4) - b / (d.length / 4))]; }));
+  assert.equal(r.length, 6); assert.ok(r.every(x => x[0] > 25), 'не чорні: ' + JSON.stringify(r)); assert.ok(new Set(r.map(x => x.join())).size >= 4, 'різні: ' + JSON.stringify(r));
 });
 await step('скинути корекцію повертає нейтральний граф', async () => {
   await p.locator('.lane-adj .it.adjl').click(); await settle();

@@ -10,6 +10,7 @@ import { reverseRange, REVERSE_MAX } from './reverse.js';
 import { addMedia } from './media.js';
 import { DENOISE_LEVELS } from './denoise.js';
 import { scaleGraphKf, RECIPES, recipeGraph, newGraph } from './color.js';
+import { paintAdjRecipeThumbs } from './color-ui.js';
 import { scaleKf } from './kf.js';
 import { hasKf, keyHere, setKeyHere, removeKeyHere, autoKey, syncBase, localTime, itemLength } from './kf.js';
 import { parseSubtitles } from './srt.js';
@@ -72,6 +73,8 @@ export function initLibrary() {
   });
   on('select', () => { if (tab === 'captions') markActiveCaption(); });
   on('time', () => { if (tab === 'captions') markActiveCaption(); });
+  let thT = 0; // мініатюри стилів корекції слідують за кадром під курсором
+  on('time', () => { if (thT || !document.querySelector('#inspector .adj-rc')) return; thT = setTimeout(() => { thT = 0; const b = document.querySelector('#inspector'); if (b && b.querySelector('.adj-rc')) paintAdjRecipeThumbs(b); }, 350); });
   let kfT = 0;
   on('time', () => { const o = findSel(); if (!o || !hasKf(o) || kfT) return; kfT = setTimeout(() => { kfT = 0; const s = findSel(); if (s && hasKf(s) && !typingIn($('inspector'))) { syncBase(kindOfSel(), s); renderInspector(); } }, 120); });
   renderLibrary();
@@ -408,7 +411,7 @@ function drawInspector() {
   const sp = el.querySelector('.ipanel'), keepTop = sp && !resetScroll && el.dataset.who === inspWho() ? sp.scrollTop : 0;
   resetScroll = false;
   el.dataset.who = inspWho();
-  if (setHtml(el, html)) balanceSegs(el);
+  if (setHtml(el, html)) { balanceSegs(el); if (el.querySelector('.adj-rc')) paintAdjRecipeThumbs(el); }
   const np = el.querySelector('.ipanel'); if (np && keepTop) np.scrollTop = keepTop;
 }
 let resetScroll = false;
@@ -587,7 +590,7 @@ function animSeg(o) {
 
 function adjustPanel(o) {
   const tabs = [
-    ['look', 'Корекція', () => sec('Готові стилі', `<div class="adj-rc">${RECIPES.map(r => `<button type="button" class="btn btn-outline btn-sm${o.name === r.name ? ' on' : ''}" data-a="adjRecipe" data-v="${r.id}" data-tip="${esc(r.note)}" aria-pressed="${o.name === r.name}">${esc(r.name)}</button>`).join('')}</div>`) + sec('Колір на ділянці', `<p class="hint">Колір зміниться в усьому кадрі лише на цьому проміжку часу. Накладання над ним (текст, рамки) не чіпається.</p>
+    ['look', 'Корекція', () => sec('Готові стилі', `<div class="adj-rc">${RECIPES.map(r => `<button type="button" class="btn btn-outline btn-sm${o.name === r.name ? ' on' : ''}" data-a="adjRecipe" data-v="${r.id}" data-tip="${esc(r.note)}" aria-pressed="${o.name === r.name}"><canvas width="112" height="63" aria-hidden="true"></canvas><span>${esc(r.name)}</span></button>`).join('')}</div>`) + sec('Колір на ділянці', `<p class="hint">Колір зміниться в усьому кадрі лише на цьому проміжку часу. Накладання над ним (текст, рамки) не чіпається.</p>
       <div class="iaction"><button class="btn btn-primary btn-sm btn-block" data-a="adjOpen">${icon('sliders')}Налаштувати колір</button></div>
       ${range('amount', 'Сила', 0, 1, 0.01, o.amount ?? 1, '%', Math.round((o.amount ?? 1) * 100) + '%', true)}
       ${range('fin', 'Плавний вхід, с', 0, 3, 0.1, o.fin || 0, ' с')}${range('fout', 'Плавний вихід, с', 0, 3, 0.1, o.fout || 0, ' с')}`) +

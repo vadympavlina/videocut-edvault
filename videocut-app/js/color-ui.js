@@ -649,6 +649,15 @@ function renderRecipes() {
   queueRecipeThumbs(0);
 }
 const saveRecipes = () => { try { localStorage.setItem('videocut-recipes', JSON.stringify(st.userRecipes)); } catch { /* сховище недоступне */ } };
+// мініатюри рецептів в інспекторі шару корекції: той самий кадр під курсором, без колірних змін
+export function paintAdjRecipeThumbs(box) {
+  const items = [...box.querySelectorAll('[data-a=adjRecipe]')]; if (!items.length) return;
+  let src; try { src = renderRaw(160); } catch { return; }
+  for (const b of items) {
+    const cvs = b.querySelector('canvas'); if (!cvs) continue;
+    try { const g = recipeGraph(b.dataset.v), m = renderThumbs(src, g, luts(), cvs.width, cvs.height); const last = [...graphOrder(g)].reverse().find(q => m.get(q.id)); const im = last ? m.get(last.id) : null; if (im) cvs.getContext('2d').putImageData(im, 0, 0); } catch (e) { console.warn(e); }
+  }
+}
 function queueRecipeThumbs(delay = 450) {
   clearTimeout(rcT); rcT = setTimeout(() => {
     if (st.page !== 'color' || !curClip()) return; const src = raw(160), list = allRecipes();

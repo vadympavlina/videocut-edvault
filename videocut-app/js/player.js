@@ -332,10 +332,11 @@ export async function snapshot() {
 }
 
 // кадр без колірного графа (для мініатюр вузлів, рецептів і піпетки), задана ширина
-export function renderRaw(w) {
+// keepClip: для шару корекції вхід = кадр уже з кольором кліпа, але без шарів корекції
+export function renderRaw(w, keepClip = false) {
   const { W, H } = outputSize(), k = w / W, cw = Math.max(2, Math.round(W * k)), ch = Math.max(2, Math.round(H * k));
   const c = document.createElement('canvas'); c.width = cw; c.height = ch;
-  renderScene(c.getContext('2d'), cw, ch, S.t, previewProvider, undefined, { ovFrame: ovProvider, colorBypass: true });
+  renderScene(c.getContext('2d'), cw, ch, S.t, previewProvider, undefined, { ovFrame: ovProvider, colorBypass: !keepClip, skipAdjust: keepClip });
   return c;
 }
 export const previewCanvas = () => canvas;

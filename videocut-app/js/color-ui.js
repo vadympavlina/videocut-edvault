@@ -95,7 +95,7 @@ export function initColorUi() {
     let n = 0; for (const o of S.project.clips) if (o !== c) { o.cg = JSON.parse(JSON.stringify(c.cg)); n++; }
     if (!n) { toast('Інших кліпів немає'); return; } renderStrip(); requestDraw(); done('граф застосовано до всіх кліпів'); toast(`Колір застосовано до ${n} ${n === 1 ? 'кліпа' : 'кліпів'}`, 'ok');
   });
-  $('cgReset').addEventListener('click', () => { if (!curClip()) return; editGraph((g, c) => { c.cg = newGraph(); }); st.sel = 'prim1'; touch(true); renderInspector(); done('граф скинуто'); });
+  $('cgReset').addEventListener('click', () => { if (!curClip()) return; editGraph((g, c) => { c.cg = newGraph(); if (c.type === 'adjust') delete c.name; }); st.sel = 'prim1'; touch(true); renderInspector(); done('граф скинуто'); });
   root.scopes.addEventListener('click', e => { const b = e.target.closest('[data-sc]'); if (!b) return; st.scope = b.dataset.sc; for (const x of root.scopes.querySelectorAll('[data-sc]')) { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); } queueScopes(); });
   on('time', () => { if (st.page === 'color') { onClipMaybeChanged(); queueScopes(); queueRecipeThumbs(); updateKfHead(); if (curGraph()?.nodes.some(hasKf)) { queueThumbs(); const nn = nodeOf(selId); if (nn && hasKf(nn)) for (const e of root.insp.querySelectorAll('.crow, .wheel')) e._refresh?.(); updateMaskOverlay(); } } });
   on('project', () => { if (st.page === 'color') { if (!S.project.clips.length) { setPage('edit'); return; } onClipMaybeChanged(true); queueThumbs(); queueScopes(); queueRecipeThumbs(); } });
@@ -329,7 +329,7 @@ function nodeMenu(id, x, y) {
 /* ═════════ мініатюри вузлів і рецептів ═════════ */
 let thT = 0, scT = 0, rcT = 0, rawCache = null;
 function queueThumbs() { clearTimeout(thT); thT = setTimeout(() => { rawCache = null; paintThumbs(); }, 90); }
-function raw(w) { if (!rawCache || rawCache.w !== w) rawCache = { w, c: renderRaw(w) }; return rawCache.c; }
+function raw(w) { const k = !!curAdj(); if (!rawCache || rawCache.w !== w || rawCache.k !== k) rawCache = { w, k, c: renderRaw(w, k) }; return rawCache.c; }
 function paintThumbs() {
   const c = curClip(); const box = $('cgNodes'); if (!c || !box || st.page !== 'color') return;
   const g = animatedGraph(c.cg || newGraph(), curT()), src = raw(120); let m = null;
@@ -642,7 +642,7 @@ function renderRecipes() {
     const w = h('div', 'rcw'), b = h('button', 'rc'); b.type = 'button'; b.dataset.id = r.id; b.setAttribute('aria-label', `Рецепт «${r.name}»: ${r.note}`);
     b.innerHTML = `<canvas width="112" height="63" aria-hidden="true"></canvas><span>${esc(r.name)}</span>`; w.appendChild(b); list.appendChild(w);
     if (r.user) { const d = h('button', 'rc-del', '×'); d.type = 'button'; d.setAttribute('aria-label', `Видалити рецепт «${r.name}»`); d.title = 'Видалити'; w.appendChild(d); d.addEventListener('click', () => { st.userRecipes = st.userRecipes.filter(q => q.id !== r.id); saveRecipes(); renderRecipes(); }); }
-    const apply = () => { const g = r.graph(); if (!g || !editGraph((gr, c) => { c.cg = g; })) return; st.sel = g.nodes.find(q => q.type === 'prim')?.id || 'in'; renderAll(); fitView(); touch(); done('рецепт «' + r.name + '»'); };
+    const apply = () => { const g = r.graph(); if (!g || !editGraph((gr, c) => { c.cg = g; if (c.type === 'adjust') { if (r.user) delete c.name; else c.name = r.name; } })) return; st.sel = g.nodes.find(q => q.type === 'prim')?.id || 'in'; renderAll(); fitView(); touch(); done('рецепт «' + r.name + '»'); };
     b.addEventListener('click', apply);
   }
   $('rcSave').addEventListener('click', () => { const g = curGraph(); if (!g || isIdentityGraph(g)) { toast('Спершу щось змініть у кольорі', 'warn'); return; } const name = (prompt('Назва рецепта', 'Мій рецепт') || '').trim().slice(0, 30); if (!name) return; st.userRecipes = [...st.userRecipes, { id: 'u' + Date.now().toString(36), name, cg: JSON.parse(JSON.stringify(g)) }].slice(-12); saveRecipes(); renderRecipes(); toast('Рецепт збережено', 'ok'); });
@@ -652,7 +652,7 @@ const saveRecipes = () => { try { localStorage.setItem('videocut-recipes', JSON.
 // мініатюри рецептів в інспекторі шару корекції: той самий кадр під курсором, без колірних змін
 export function paintAdjRecipeThumbs(box) {
   const items = [...box.querySelectorAll('[data-a=adjRecipe]')]; if (!items.length) return;
-  let src; try { src = renderRaw(160); } catch { return; }
+  let src; try { src = renderRaw(160, true); } catch { return; }
   for (const b of items) {
     const cvs = b.querySelector('canvas'); if (!cvs) continue;
     try { const g = recipeGraph(b.dataset.v), m = renderThumbs(src, g, luts(), cvs.width, cvs.height); const last = [...graphOrder(g)].reverse().find(q => m.get(q.id)); const im = last ? m.get(last.id) : null; if (im) cvs.getContext('2d').putImageData(im, 0, 0); } catch (e) { console.warn(e); }

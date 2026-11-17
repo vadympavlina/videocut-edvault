@@ -96,8 +96,17 @@ await step('скинути корекцію повертає нейтральн�
   await p.locator('#inspector [data-a=adjReset]').click(); await settle();
   assert.equal(await p.evaluate(() => window.VideoCut.S.project.overlays[0].cg.nodes.find(n => n.type === 'prim').p.sat), 1);
 });
+await step('вхідна мініатюра графа ділянки містить колір самого кліпа', async () => {
+  const thumb = () => p.evaluate(() => { const c = document.querySelector('#cgNodes .cn canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] + d[i + 1] + d[i + 2]; return s / (d.length / 4); });
+  await p.locator('.lane-adj .it.adjl').click(); await p.locator('#inspector [data-a=adjOpen]').click(); await settle(); await at(2); await p.waitForTimeout(700);
+  const plain = await thumb();
+  await p.evaluate(() => { const c = window.VideoCut.S.project.clips[0]; c.cg = JSON.parse(JSON.stringify(window.VideoCut.S.project.overlays[0].cg)); c.cg.nodes.find(n => n.type === 'prim').p.exp = -1.2; window.VideoCut.commit(); });
+  await p.waitForTimeout(900); const graded = await thumb();
+  await p.evaluate(() => { delete window.VideoCut.S.project.clips[0].cg; window.VideoCut.commit(); });
+  assert.ok(graded < plain - 20, `${plain} → ${graded}`);
+});
 await step('вихід курсора за межі ділянки повертає ціль на кліп', async () => {
-  await p.locator('.lane-adj .it.adjl').click(); await p.locator('#inspector [data-a=adjOpen]').click(); await settle(); assert.equal(await p.locator('.cg-adj.on').count(), 1);
+  await p.click('#pageSw [data-page=edit]'); await settle(); await p.locator('.lane-adj .it.adjl').click(); await p.locator('#inspector [data-a=adjOpen]').click(); await settle(); assert.equal(await p.locator('.cg-adj.on').count(), 1);
   await at(4.5); await settle();
   assert.equal(await p.locator('.cg-adj.on').count(), 0); assert.equal(await p.locator('.cg-title').textContent(), 'Граф кліпа');
 });

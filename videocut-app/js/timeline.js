@@ -3,11 +3,11 @@
 import { S, media, emit, on, layout, duration, clipDur, musicDur, snap, snapHit, snapOn, commit, rippleShift, select, selectMany, isSel, findSel, laneOf, laneLocked, trackOf, LANES } from './state.js';
 import { thumbAt, PEAKS_RATE } from './media.js';
 import { isLayer } from './layer.js';
-import { addToTimeline, addLayerAt, addMarker, removeMarker, renameMarker } from './ops.js';
+import { addToTimeline, addLayerAt, addMarker, removeMarker, renameMarker, splitItem, splitAll } from './ops.js';
 import { seek } from './player.js';
 import { shiftGraphKf } from './color.js';
 import { shiftKf } from './kf.js';
-import { $, esc, icon, clamp, fmt, setHtml, paintRange } from './ui.js';
+import { $, esc, icon, clamp, fmt, setHtml, paintRange, toast } from './ui.js';
 
 const BASE = { ROW: 26, CC_H: 28, V_H: 58, V2_H: 44, A_H: 40 }, RULER_H = 22, BAR_H = 44;
 let ROW = 26, CC_H = 28, V_H = 58, V2_H = 44, A_H = 40;
@@ -57,6 +57,11 @@ export function initTimeline() {
   window.addEventListener('resize', () => { render(); });
   scroll.addEventListener('wheel', onWheel, { passive: false });
   inner.addEventListener('pointerdown', onDown);
+  // режим «Ніж»: вертикальна лінія розрізу слідує за курсором миші (з прилипанням)
+  const rz = document.createElement('i'); rz.className = 'razor-line'; rz.hidden = true; inner.appendChild(rz);
+  inner.addEventListener('pointermove', e => { if (!S.razor || drag) { rz.hidden = true; return; } rz.hidden = false; rz.style.left = Math.max(0, snap(timeAt(e), null, 8)) * S.pps + 'px'; });
+  inner.addEventListener('pointerleave', () => { rz.hidden = true; });
+  on('razor', () => { rz.hidden = true; });
   // кнопки в заголовках доріжок: сховати, вимкнути звук, соло, заблокувати
   heads.addEventListener('click', e => { const b = e.target.closest('.th-b'); if (b) toggleTrack(b.dataset.lane, b.dataset.act); });
   // Esc під час перетягування скасовує його й нічого більше не робить
@@ -496,6 +501,13 @@ const markerAt = e => {
 function onDown(e) {
   if (e.button !== 0) return;
   const it = e.target.closest('.it');
+  if (S.razor && e.target.closest('.lane')) { // режим «Ніж»
+    e.preventDefault();
+    const t = Math.max(0, snap(timeAt(e), null, 8));
+    const done = e.shiftKey ? splitAll(t) : it ? (!lockedItem(it.dataset.kind, it.dataset.id) && splitItem(it.dataset.kind, it.dataset.id, t) && (commit('Розрізати'), emit('did-cut'), true)) : false;
+    if (!done && !e.shiftKey) toast('Клацніть по елементу, який треба розрізати');
+    return;
+  }
   if (!it) {
     if (e.target.closest('.tl-ruler-wrap')) {
       const mk = markerAt(e);

@@ -64,6 +64,28 @@ export function maskValue(m, u, v, aspect = 16 / 9) {
 const KF_PATH = /^(p|mask)(\.[a-zA-Z0-9]+){1,2}$/;
 export const getPath = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
 export function setPath(o, path, v) { const ks = path.split('.'), last = ks.pop(); let a = o; for (const k of ks) { if (a[k] == null) return false; a = a[k]; } if (a[last] === undefined) return false; a[last] = v; return true; }
+// Зіставлення кольору: вирівнюємо розподіл яскравості кожного каналу кадру src за кадром ref (відповідність гістограм).
+// Повертає криві r, g, b (9 точок) із силою strength 0…1 — готові для вузла «Криві».
+export function matchCurves(src, ref, strength = 0.85, pts = 9) {
+  const cdf = d => { const out = [0, 1, 2].map(() => new Float64Array(256)); const n = d.length / 4; for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) out[c][d[i + c]]++; for (const h of out) { let a = 0; for (let k = 0; k < 256; k++) { a += h[k]; h[k] = a / n; } } return out; };
+  const S = cdf(src), R = cdf(ref), res = {};
+  ['r', 'g', 'b'].forEach((ch, c) => {
+    const map = new Float64Array(256); let j = 0;
+    for (let v = 0; v < 256; v++) { while (j < 255 && R[c][j] < S[c][v] - 1e-9) j++; map[v] = j / 255; }
+    const out = [];
+    for (let i = 0; i < pts; i++) {
+      const x = i / (pts - 1), v = Math.round(x * 255);
+      // згладжуємо: середнє по сусідніх рівнях, щоб крива не мала сходинок
+      let a = 0, n = 0; for (let k = Math.max(0, v - 6); k <= Math.min(255, v + 6); k++) { a += map[k]; n++; }
+      let y = x + (a / n - x) * strength; y = Math.min(1, Math.max(0, y));
+      if (out.length && y < out[out.length - 1][1]) y = out[out.length - 1][1];
+      out.push([+x.toFixed(4), +y.toFixed(4)]);
+    }
+    out[0][0] = 0; out[out.length - 1][0] = 1;
+    res[ch] = out;
+  });
+  return res;
+}
 export const hasKf = n => !!n.kf && Object.keys(n.kf).length > 0;
 export function kfValue(keys, t) {
   if (!keys.length) return undefined;

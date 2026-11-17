@@ -1,13 +1,14 @@
 // Сторінка «Колір»: перегляд До/Після, осцилографи, інспектор вузла (колеса, криві, HSL…), редактор вузлів і рецепти.
 import { S, on, commit, clipAt, layout, clipDur, media, select } from './state.js';
 import { addOverlay } from './ops.js';
+import { thumbAt } from './media.js';
 import { requestDraw, renderRaw, seek, previewCanvas } from './player.js';
 import { $, icon, toast, paintRanges } from './ui.js';
 import { parseCube } from './lut.js';
 import {
   COLOR_VIEW, NODE_TYPES, ADDABLE, MIX_MODES, DEFAULTS, RECIPES, newGraph, newNode, repairGraph, recipeGraph, graphOrder, isIdentityGraph,
   nodeNeutral, renderThumbs, curveTable, rgb2hsv, gpuAvailable, MASKABLE, MASK_SHAPES, maskDefault,
-  tidyGraph, animatedGraph, kfSet, kfRemove, kfAt, kfTimes, kfValue, getPath, setPath, hasKf,
+  tidyGraph, matchCurves, animatedGraph, kfSet, kfRemove, kfAt, kfTimes, kfValue, getPath, setPath, hasKf,
 } from './color.js';
 import { drawWaveform, drawVector, drawHist, histogram } from './scopes.js';
 
@@ -72,6 +73,7 @@ export function initColorUi() {
     <div class="cg-head"><b class="cg-title">Граф кліпа</b><div class="cg-clips" id="cgClips" role="tablist" aria-label="Кліпи"></div>
       <button class="btn btn-sm cg-new" id="cgNewAdj" title="Нова корекція на ділянку: від курсора, поверх відео">+ Ділянка</button>
       <span class="grow"></span>
+      <button class="btn btn-sm" id="cgXfer" aria-haspopup="menu" data-tip="Копіювати, вставити й зіставити колір між кліпами">Перенести колір</button>
       <button class="btn btn-sm" id="cgAdd" aria-haspopup="menu">${icon('plus')}Вузол</button>
  <button class="btn btn-sm" id="cgAll" data-tip="Застосувати граф цього кліпа до всіх кліпів проєкту">До всіх кліпів</button>
       <button class="btn btn-sm" id="cgTidy" data-tip="Розкласти вузли акуратно зліва направо">Впорядкувати</button>
@@ -88,6 +90,7 @@ export function initColorUi() {
   wireGraphCanvas(); wireViewControls(); wireKfStrip();
   $('cgAdd').addEventListener('click', e => addMenu(e.currentTarget));
   $('cgNewAdj').addEventListener('click', newAdjust);
+  $('cgXfer').addEventListener('click', e => xferMenu(e.currentTarget));
   $('cgFit').addEventListener('click', fitView);
   $('cgTidy').addEventListener('click', () => { if (!curClip()) return; editGraph(g => tidyGraph(g)); renderGraph(); fitView(); done('вузли впорядковано'); });
   $('cgAll').addEventListener('click', () => {
@@ -286,7 +289,7 @@ function removeNode(id) {
   });
   st.sel = 'in'; renderGraph(); renderInspector(); touch(); done('вузол видалено');
 }
-function addNode(type) {
+function addNode(type, quiet = false) {
   let nid;
   editGraph(g => {
     const sel = g.nodes.find(n => n.id === st.sel), outN = g.nodes.find(n => n.type === 'out');
@@ -300,7 +303,7 @@ function addNode(type) {
     for (const m of g.nodes) if (m !== n && m.id !== after.id && m.x > after.x) m.x += NW + 40;
     nid = n.id; Object.assign(g, repairGraph(g) || g);
   });
-  st.sel = nid; renderGraph(); renderInspector(); fitView(); touch(); done('вузол «' + NODE_TYPES[type].name + '»');
+  st.sel = nid; renderGraph(); renderInspector(); fitView(); touch(); if (!quiet) done('вузол «' + NODE_TYPES[type].name + '»');
 }
 function dupNode(id) {
   const n = nodeOf(id); if (!n || n.type === 'in' || n.type === 'out') return; let nid;
@@ -318,6 +321,38 @@ function popup(x, y, items) {
   setTimeout(() => { document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', esc_, true); }, 0); m.querySelector('button')?.focus();
 }
 function addMenu(btn) { const r = btn.getBoundingClientRect(); popup(r.left, r.top - ADDABLE.length * 34 - 10, ADDABLE.map(t => ({ t: NODE_TYPES[t].name, dot: NODE_TYPES[t].color, on: () => addNode(t) }))); }
+/* ═════════ перенесення кольору між кліпами ═════════ */
+let clipCopy = null; // скопійований граф (разом із ключовими кадрами)
+function xferMenu(btn) {
+  const r = btn.getBoundingClientRect(), L = layout(), tgt = curClip();
+  const items = [
+    { t: 'Копіювати колір', on: () => { const c = curClip(); if (!c?.cg) { toast('У цього елемента ще немає налаштованого кольору', 'warn'); return; } clipCopy = JSON.parse(JSON.stringify(c.cg)); toast('Колір скопійовано', 'ok'); } },
+    { t: clipCopy ? 'Вставити колір' : 'Вставити колір (спершу скопіюйте)', on: () => { if (!clipCopy) { toast('Спершу скопіюйте колір з іншого кліпа', 'warn'); return; } editGraph((g, c) => { c.cg = JSON.parse(JSON.stringify(clipCopy)); }); st.sel = null; renderAll(); requestDraw(); done('вставлено колір'); toast('Колір вставлено', 'ok'); } },
+  ];
+  L.forEach((l, i) => { if (l.clip !== tgt) items.push({ t: `Зіставити колір із кліпом ${i + 1}`, on: () => matchTo(l) }); });
+  popup(r.left, r.bottom + 6, items);
+}
+// кадр кліпу з урахуванням його кольору, зменшений до w пікселів
+function gradedFrame(l, w = 160) {
+  const m = media.get(l.clip.mediaId), src = m && thumbAt(m, ((l.clip.in || 0) + (l.clip.out ?? (l.clip.in || 0) + 1)) / 2);
+  if (!src) return null;
+  const h = Math.max(2, Math.round(w * (src.height / src.width))), c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(src, 0, 0, w, h);
+  const cg = l.clip.cg;
+  if (cg && !isIdentityGraph(cg)) {
+    try { const mm = renderThumbs(c, animatedGraph(cg, 0), luts(), w, h), order = graphOrder(cg), last = [...order].reverse().find(q => mm.get(q.id)); const im = last ? mm.get(last.id) : null; if (im) return im.data; } catch (e) { console.warn(e); }
+  }
+  return c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+}
+function matchTo(ref) {
+  const me = curClip(); if (!me) return;
+  const src = raw(160), a = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, src.width, src.height).data, b = gradedFrame(ref);
+  if (!b) { toast('Не вдалося взяти кадр еталонного кліпа', 'warn'); return; }
+  const cv = matchCurves(a, b, 0.85);
+  addNode('curves', true);
+  editGraph(() => { const n = nodeOf(st.sel); if (n && n.type === 'curves') { n.p = { ...n.p, r: cv.r, g: cv.g, b: cv.b }; } });
+  renderAll(); touch(true); done('зіставлено з кліпом ' + (layout().indexOf(ref) + 1));
+  toast('Колір зіставлено. Вузол «Криві» можна підправити або ослабити', 'ok', 4000);
+}
 function nodeMenu(id, x, y) {
   const n = nodeOf(id); if (!n) return; selectNode(id);
   const items = [];

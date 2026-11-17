@@ -27,6 +27,8 @@ jobs:
         run: VC_SKIP="кожна кнопка" npm run test:scenarios
       - name: Колір (GPU проти CPU і сторінка «Колір»)
         run: npm run test:color
+      - name: Ножі й перенесення кольору (розріз усіх доріжок, режим «Ніж», копіювання й зіставлення кольору)
+        run: npm run test:cut
       - name: Субтитри (шаблони, вигляд, безпечна зона, експорт)
         run: npm run test:captions
       - name: Аудити (доступність, швидкість, стрес)

@@ -57,28 +57,62 @@ function splitList(list, id, t) {
   list.splice(i + 1, 0, b);
   return b;
 }
-export function splitAt(t = S.t) {
-  const p = S.project, sel = findSel();
-  // спершу — виділений елемент, якщо курсор на ньому
-  if (sel && S.sel.kind === 'overlay' && splitList(p.overlays, sel.id, t)) { commit(); toast('Розрізано'); return true; }
-  if (sel && S.sel.kind === 'caption' && splitList(p.captions, sel.id, t)) { commit(); toast('Розрізано'); return true; }
-  if (sel && S.sel.kind === 'music') {
-    const m = sel, d = musicDur(m);
-    if (t > m.start + 0.1 && t < m.start + d - 0.1) {
-      const b = { ...structuredClone(m), id: uid('a'), start: t, in: m.in + (t - m.start), fadeIn: 0 };
-      m.out = m.in + (t - m.start); m.fadeOut = 0;
-      p.music.splice(p.music.indexOf(m) + 1, 0, b);
-      commit(); toast('Розрізано'); return true;
-    }
-  }
-  const l = clipAt(t);
-  if (!l || t <= l.start + FPS_EPS || t >= l.end - FPS_EPS) { toast('Поставте курсор усередину кліпу, щоб розрізати'); return false; }
+// розрізи окремих елементів (без commit): повертають новий елемент або false
+function splitClipAt(l, t) {
+  const p = S.project;
+  if (!l || t <= l.start + FPS_EPS || t >= l.end - FPS_EPS) return false;
   const c = l.clip, st = srcTime(l, t);
   const b = { ...structuredClone(c), id: uid('c'), in: st, fadeIn: 0 };
   delete b.tr; // розріз — без переходу
   c.out = st; c.fadeOut = 0;
   splitKf('clip', c, b, t - l.start); splitGraphKf(c.cg, b.cg, t - l.start);
   p.clips.splice(p.clips.indexOf(c) + 1, 0, b);
+  return b;
+}
+function splitMusicAt(m, t) {
+  const p = S.project, d = musicDur(m);
+  if (!(t > m.start + 0.1 && t < m.start + d - 0.1)) return false;
+  const b = { ...structuredClone(m), id: uid('a'), start: t, in: m.in + (t - m.start), fadeIn: 0 };
+  m.out = m.in + (t - m.start); m.fadeOut = 0;
+  p.music.splice(p.music.indexOf(m) + 1, 0, b);
+  return b;
+}
+// розріз одного елемента будь-якої доріжки в момент t; повертає true, якщо розрізано
+export function splitItem(kind, id, t) {
+  const p = S.project;
+  if (kind === 'clip') { const l = layout().find(x => x.clip.id === id); return !!splitClipAt(l, t); }
+  if (kind === 'music') { const m = p.music.find(x => x.id === id); return !!(m && !laneLocked('a') && splitMusicAt(m, t)); }
+  const list = kind === 'overlay' ? p.overlays : p.captions, o = list.find(x => x.id === id);
+  if (!o || laneLocked(laneOf(kind, o))) return false;
+  return !!splitList(list, id, t);
+}
+// розріз усіх доріжок у момент t (Shift+S, «розрізати всюди»)
+export function splitAll(t = S.t) {
+  const p = S.project; let n = 0, made = null;
+  if (!laneLocked('v')) { const b = splitClipAt(clipAt(t), t); if (b) { n++; made = { kind: 'clip', id: b.id }; } }
+  for (const o of p.overlays.slice()) if (t > o.start && t < o.start + o.dur && splitItem('overlay', o.id, t)) n++;
+  for (const c of p.captions.slice()) if (t > c.start && t < c.start + c.dur && !laneLocked('cc') && splitItem('caption', c.id, t)) n++;
+  for (const m of p.music.slice()) if (splitItem('music', m.id, t)) n++;
+  if (!n) { toast('У цьому місці нічого розрізати: поставте курсор усередину елемента'); return false; }
+  commit(`Розрізати всюди (${n})`);
+  if (made) { emit('did-cut'); select(made.kind, made.id); }
+  toast(`Розрізано всюди: ${n}`, 'ok');
+  return true;
+}
+export function splitAt(t = S.t) {
+  const p = S.project, sel = findSel();
+  // кілька виділених елементів — розрізаємо кожен, під яким стоїть курсор
+  if (S.multi.length > 1) {
+    let n = 0; for (const m of S.multi.slice()) if (splitItem(m.kind, m.id, t)) n++;
+    if (n) { commit(`Розрізати (${n})`); toast(`Розрізано елементів: ${n}`, 'ok'); return true; }
+  }
+  // спершу — виділений елемент, якщо курсор на ньому
+  if (sel && S.sel.kind === 'overlay' && splitList(p.overlays, sel.id, t)) { commit(); toast('Розрізано'); return true; }
+  if (sel && S.sel.kind === 'caption' && splitList(p.captions, sel.id, t)) { commit(); toast('Розрізано'); return true; }
+  if (sel && S.sel.kind === 'music' && splitMusicAt(sel, t)) { commit(); toast('Розрізано'); return true; }
+  const l = clipAt(t);
+  if (!l || t <= l.start + FPS_EPS || t >= l.end - FPS_EPS) { toast('Поставте курсор усередину кліпу, щоб розрізати'); return false; }
+  const b = splitClipAt(l, t);
   commit();
   emit('did-cut');
   select('clip', b.id);

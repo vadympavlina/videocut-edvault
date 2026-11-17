@@ -5,7 +5,7 @@ import { initPlayer, resizeCanvas, seek, toggle, pause, play, snapshot, requestD
 import { setLaneSize, toggleTrack, initTimeline, render as renderTimeline, zoomBy, zoomFit, setZoom } from './timeline.js';
 import { initLibrary, initInspector, importCaptionFile, showTab, showProject } from './panels.js';
 import { initPreviewLayer, renderHandles } from './preview.js';
-import { TEMPLATES, applyTemplate, addMarker, removeMarker, jumpMarker, addToTimeline, addOverlay, splitAt, deleteSel, duplicateSel, copySel, pasteClip, canPaste, cutRange, addCaption, normalizeSel, transitionsAll, addTitleCard, addLayerAt, TEXT_PRESETS, CARD_STYLES } from './ops.js';
+import { TEMPLATES, applyTemplate, addMarker, removeMarker, jumpMarker, addToTimeline, addOverlay, splitAt, splitAll, deleteSel, duplicateSel, copySel, pasteClip, canPaste, cutRange, addCaption, normalizeSel, transitionsAll, addTitleCard, addLayerAt, TEXT_PRESETS, CARD_STYLES } from './ops.js';
 import { initMenu } from './menu.js';
 import { initCtx } from './ctxmenu.js';
 import { toSrt, toVtt } from './srt.js';
@@ -184,6 +184,14 @@ window.addEventListener('drop', e => {
 
 // ── таймлайн: кнопки ──
 $('btnSplit').addEventListener('click', () => splitAt());
+// режим «Ніж»: клацання по елементу на таймлайні розрізає його в цьому місці
+export function setRazor(on_) {
+  S.razor = !!on_; document.body.classList.toggle('razor-on', S.razor);
+  const b = $('btnRazor'); b.classList.toggle('on', S.razor); b.setAttribute('aria-pressed', S.razor);
+  emit('razor');
+  if (S.razor) toast('Ніж: клацніть по елементу, щоб розрізати. Shift розрізає всі доріжки. Esc — вийти', 'ok', 3500);
+}
+$('btnRazor').addEventListener('click', () => setRazor(!S.razor));
 $('btnDelete').addEventListener('click', () => { if (!deleteSel()) toast('Спочатку виділіть елемент на таймлайні'); });
 $('btnMarkIn').addEventListener('click', () => mark('in'));
 $('btnMarkOut').addEventListener('click', () => mark('out'));
@@ -261,7 +269,8 @@ document.addEventListener('keydown', e => {
     }
     case 'Home': e.preventDefault(); seek(0); break;
     case 'End': e.preventDefault(); seek(duration()); break;
-    case 'KeyS': e.preventDefault(); splitAt(); break;
+    case 'KeyS': e.preventDefault(); if (e.shiftKey) splitAll(); else splitAt(); break;
+    case 'KeyB': e.preventDefault(); setRazor(!S.razor); break;
     case 'Delete': case 'Backspace': e.preventDefault(); deleteSel(); break;
     case 'KeyM': { e.preventDefault(); const near = (S.project.markers || []).find(m => Math.abs(m.t - S.t) < 0.02); if (near) removeMarker(near.id); else { addMarker(S.t); toast('Маркер додано. Подвійний клік по ньому на лінійці — назва, Alt+клік — прибрати', '', 3500); } break; }
     case 'Comma': e.preventDefault(); jumpMarker(-1); break;
@@ -276,7 +285,7 @@ document.addEventListener('keydown', e => {
     case 'Equal': case 'NumpadAdd': zoomBy(1.5); break;
     case 'Minus': case 'NumpadSubtract': zoomBy(1 / 1.5); break;
     case 'KeyZ': if (e.shiftKey) zoomFit(); break;
-    case 'Escape': if (S.sel) select(null); else clearMarks(); break;
+    case 'Escape': if (S.razor) setRazor(false); else if (S.sel) select(null); else clearMarks(); break;
     case 'Slash': if (e.shiftKey) openModal('helpModal'); break;
     default: return;
   }
@@ -560,6 +569,8 @@ window.addEventListener('beforeunload', e => { if (isRecording() || asrBusy() ||
       { label: 'Видалити', ic: 'trash', key: 'Delete', enabled: hasSel, run: () => deleteSel() },
       { sep: true },
       { label: 'Розрізати в позиції курсора', ic: 'split', key: 'S', enabled: has, run: () => splitAt() },
+      { label: 'Розрізати всі доріжки в позиції курсора', ic: 'split', key: 'Shift+S', enabled: has, run: () => splitAll() },
+      { label: 'Ніж (клацання по таймлайну)', ic: 'razor', key: 'B', enabled: has, run: () => setRazor(!S.razor) },
       { head: 'Вирізати шматок відео' },
       { label: '1. Позначити початок', key: 'I', enabled: has, run: () => mark('in') },
       { label: '2. Позначити кінець', key: 'O', enabled: has, run: () => mark('out') },

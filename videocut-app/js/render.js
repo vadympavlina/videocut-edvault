@@ -389,7 +389,7 @@ export function renderScene(ctx, W, H, t, provider, L = layout(), opts = {}) {
   }
   for (const o of p.overlays) {
     if (t < o.start || t >= o.start + o.dur) continue;
-    if (o.type === 'adjust') { if (!opts.colorBypass && laneVisible('ov')) drawAdjust(ctx, o, W, H, t, opts); continue; }
+    if (o.type === 'adjust') { if (!opts.colorBypass && laneVisible('adj')) drawAdjust(ctx, o, W, H, t, opts); continue; }
     if (!laneVisible(isLayer(o) ? 'v2' : 'ov')) continue;
     const frame = o.type === 'video' && opts.ovFrame ? opts.ovFrame(o, (o.in || 0) + (t - o.start)) : null;
     if (hasKf(o)) { const r = resolveKf('overlay', o, t - o.start); drawAnimated(ctx, r, W, H, k, t, opts.editing, frame); const tb = textBoxes.get(r); if (tb != null) textBoxes.set(o, tb); }

@@ -9,7 +9,7 @@ import { analyze as analyzeStab } from './stab.js';
 import { reverseRange, REVERSE_MAX } from './reverse.js';
 import { addMedia } from './media.js';
 import { DENOISE_LEVELS } from './denoise.js';
-import { scaleGraphKf } from './color.js';
+import { scaleGraphKf, RECIPES, recipeGraph, newGraph } from './color.js';
 import { scaleKf } from './kf.js';
 import { hasKf, keyHere, setKeyHere, removeKeyHere, autoKey, syncBase, localTime, itemLength } from './kf.js';
 import { parseSubtitles } from './srt.js';
@@ -587,11 +587,12 @@ function animSeg(o) {
 
 function adjustPanel(o) {
   const tabs = [
-    ['look', 'Корекція', () => sec('Колір на ділянці', `<p class="hint">Колір зміниться в усьому кадрі лише на цьому проміжку часу. Накладання над ним (текст, рамки) не чіпається.</p>
+    ['look', 'Корекція', () => sec('Готові стилі', `<div class="adj-rc">${RECIPES.map(r => `<button type="button" class="btn btn-outline btn-sm${o.name === r.name ? ' on' : ''}" data-a="adjRecipe" data-v="${r.id}" data-tip="${esc(r.note)}" aria-pressed="${o.name === r.name}">${esc(r.name)}</button>`).join('')}</div>`) + sec('Колір на ділянці', `<p class="hint">Колір зміниться в усьому кадрі лише на цьому проміжку часу. Накладання над ним (текст, рамки) не чіпається.</p>
       <div class="iaction"><button class="btn btn-primary btn-sm btn-block" data-a="adjOpen">${icon('sliders')}Налаштувати колір</button></div>
       ${range('amount', 'Сила', 0, 1, 0.01, o.amount ?? 1, '%', Math.round((o.amount ?? 1) * 100) + '%', true)}
       ${range('fin', 'Плавний вхід, с', 0, 3, 0.1, o.fin || 0, ' с')}${range('fout', 'Плавний вихід, с', 0, 3, 0.1, o.fout || 0, ' с')}`) +
-      sec('Дії', `<div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="adjFit">${icon('fit')}На весь кліп під курсором</button></div>
+      sec('Дії', `<div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="adjReset">${icon('undo')}Скинути корекцію</button></div>
+      <div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="adjFit">${icon('fit')}На весь кліп під курсором</button></div>
       <div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="adjAbove">${icon('front')}Поверх усіх накладань</button><button class="btn btn-outline btn-sm btn-block" data-a="adjBelow">${icon('front')}Лише на відео (під накладаннями)</button></div>`)],
     ['time', 'Час', () => timing(o)]];
   return head('sliders', 'Корекція кольору', `${fmt(o.start, true)} – ${fmt(o.start + o.dur, true)}`) +
@@ -835,6 +836,8 @@ function onClick(e) {
     case 'front': moveZ(1); break;
     case 'mute': if (o) { o.muted = !o.muted; commit(); } break;
     case 'toCursor': if (o) { o.start = S.t; commit(); } break;
+    case 'adjRecipe': if (o) { const g = recipeGraph(b.dataset.v), r = RECIPES.find(x => x.id === b.dataset.v); if (g && r) { o.cg = g; o.name = r.name; commit('Корекція: ' + r.name); renderInspector(); } } break;
+    case 'adjReset': if (o) { o.cg = newGraph(); delete o.name; commit('Корекцію скинуто'); renderInspector(); } break;
     case 'adjOpen': if (o) window.dispatchEvent(new CustomEvent('vc-color', { detail: { adj: o.id } })); break;
     case 'adjFit': if (o) { const l = layout().find(x => S.t >= x.start && S.t < x.end) || layout()[0]; if (l) { o.start = l.start; o.dur = l.end - l.start; commit('Корекція на весь кліп'); } } break;
     case 'adjAbove': case 'adjBelow': if (o) { const a = S.project.overlays, i = a.indexOf(o); if (i >= 0) { a.splice(i, 1); if (b.dataset.a === 'adjAbove') a.push(o); else a.unshift(o); commit(b.dataset.a === 'adjAbove' ? 'Корекція над накладаннями' : 'Корекція лише на відео'); } } break;

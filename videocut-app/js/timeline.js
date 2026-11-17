@@ -127,7 +127,7 @@ export function initTimeline() {
 }
 
 // Керування доріжкою (миша й клавіші): повертає новий стан або null, якщо дії для доріжки немає
-const CAN_ACT = { v: ['hide', 'mute', 'solo', 'lock'], v2: ['hide', 'mute', 'solo', 'lock'], a: ['mute', 'solo', 'lock'], cc: ['hide', 'lock'], ov: ['hide', 'lock'] };
+const CAN_ACT = { v: ['hide', 'mute', 'solo', 'lock'], v2: ['hide', 'mute', 'solo', 'lock'], a: ['mute', 'solo', 'lock'], cc: ['hide', 'lock'], ov: ['hide', 'lock'], adj: ['hide', 'lock'] };
 export function toggleTrack(k, a) {
   if (!(CAN_ACT[k] || []).includes(a)) return null;
   const T = (S.project.tracks = S.project.tracks || {}), s = (T[k] = T[k] || {});
@@ -216,7 +216,8 @@ export function render() {
   const selCls = (k, id) => (isSel(k, id) ? (sel && sel.kind === k && sel.id === id ? ' sel main' : ' sel') : '') + (drag && drag.moved && drag.group.some(g => g.kind === k && g.id === id) ? ' drag-src' : '');
   const hnd = '<i class="h h-l"></i><i class="h h-r"></i>';
 
-  const layers = p.overlays.filter(isLayer), graphics = p.overlays.filter(o => !isLayer(o));
+  const layers = p.overlays.filter(isLayer), adjs = p.overlays.filter(o => o.type === 'adjust'), graphics = p.overlays.filter(o => !isLayer(o) && o.type !== 'adjust');
+  const ar = assignRows(adjs), ADJ_H = ar.n * ROW + 6;
   const gr = assignRows(graphics), rowOf = gr.rowOf;
   ovRowOf = rowOf;
   const n = gr.n + (dragRows === 'ov' ? 1 : 0); // під час перетягування вниз додається порожній ряд — нова доріжка
@@ -234,6 +235,10 @@ export function render() {
     return `<div class="it lay${o.type === 'image' ? ' lay-img' : ''}${selCls('overlay', o.id)}${m ? '' : ' missing'}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + (v2RowOf.get(o.id) || 0) * V2_H}px;height:${V2_H - 6}px"><span class="lbl">${esc(m ? m.name : 'Файл відсутній')}${badges.length ? ' · ' + badges.join(' · ') : ''}</span>${kfMarks(o, o.dur)}${hnd}</div>`;
   }).join('');
 
+  const adj = adjs.map((o, i) => {
+    const d = Math.max(0.01, o.dur), a = Math.round(Math.min(o.fin || 0, d / 2) / d * 100), b = Math.round(Math.min(o.fout || 0, d / 2) / d * 100);
+    return `<div class="it adjl${selCls('overlay', o.id)}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + ar.rowOf.get(o.id) * ROW}px;height:${ROW - 4}px;--fi:${a}%;--fo:${100 - b}%;--am:${Math.round((o.amount ?? 1) * 100)}%">${icon('sliders')}<span>${esc(o.name || 'Корекція')} · ${Math.round((o.amount ?? 1) * 100)}%</span>${hnd}</div>`;
+  }).join('');
   const ov = graphics.map(o => {
     const label = o.type === 'text' ? (o.text || '').split('\n')[0] : o.type === 'emoji' ? (o.emoji || '') + ' ' + OV_LABEL.emoji : OV_LABEL[o.type];
     return `<div class="it ov ov-${o.type}${selCls('overlay', o.id)}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + rowOf.get(o.id) * ROW}px;height:${ROW - 4}px">${icon(OV_ICON[o.type] || 'shapes')}<span>${esc(label)}</span>${kfMarks(o, o.dur)}${hnd}</div>`;
@@ -266,6 +271,7 @@ export function render() {
   // доріжки з'являються лише тоді, коли на них щось є (або коли туди тягнуть файл)
   const dragVis = dragKind && dragKind !== 'audio', dragAud = dragKind === 'audio' || (dragKind === 'video' && p.clips.length);
   const rows = [];
+  if (adjs.length) rows.push([ADJ_H, 'lane-adj', adj, 'sliders', 'Корекція', 'Колір на ділянках']);
   if (layers.length || (dragVis && p.clips.length)) rows.push([v2H, 'lane-v2', `<canvas class="lane-canvas" id="tlV2Canvas"></canvas>${empty(!layers.length, 'Відпустіть тут — буде поверх основного відео')}${lay}`, 'pip', 'Поверх', 'Відео 2 — поверх основного']);
   rows.push([V_H, 'lane-v', `<canvas class="lane-canvas" id="tlVCanvas"></canvas>${empty(!p.clips.length, 'Перетягніть сюди відео або фото')}${clips}${sil}`, 'video', 'Відео', 'Основне відео']);
   if (p.music.length || dragAud) rows.push([A_H * muRows, 'lane-a', `<canvas class="lane-canvas" id="tlACanvas"></canvas>${empty(!p.music.length, 'Відпустіть тут — музика чи звук')}${mu}`, 'music', 'Звук', 'Музика та озвучення']);
@@ -592,7 +598,7 @@ function beginVisuals(e) {
   document.body.classList.add('tl-dragging');
   // перенесення між рядами: лише для накладань і звуку (кліпи основної доріжки йдуть послідовно)
   const prim = itemOf(drag.kind, drag.id);
-  if (drag.mode === 'move' && prim && (drag.kind === 'music' || drag.kind === 'overlay')) {
+  if (drag.mode === 'move' && prim && (drag.kind === 'music' || drag.kind === 'overlay') && prim.type !== 'adjust') {
     const lane = drag.kind === 'music' ? 'a' : isLayer(prim) ? 'v2' : 'ov';
     const map = lane === 'a' ? muRowOf : lane === 'v2' ? v2RowOf : ovRowOf, count = lane === 'a' ? muRows : lane === 'v2' ? v2Rows : ovRows;
     drag.rowKind = lane; drag.rowH = lane === 'a' ? A_H : lane === 'v2' ? V2_H : ROW; drag.maxRow = count; // індекс порожнього ряду внизу

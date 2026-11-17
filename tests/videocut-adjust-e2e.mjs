@@ -70,7 +70,29 @@ await step('інспектор шару: вкладки, сила, кнопка 
   await i.locator('[data-a=adjOpen]').click(); await settle();
   assert.equal(await p.evaluate(() => document.body.dataset.page), 'color'); assert.equal(await p.locator('.cg-adj.on').count(), 1);
 });
+await step('Монтаж: окрема доріжка «Корекція» з елементом-градієнтом і підписом', async () => {
+  await p.click('#pageSw [data-page=edit]'); await settle();
+  assert.equal(await p.locator('.lane-adj .it.adjl').count(), 1);
+  assert.ok(/Корекція · \d+%/.test(await p.locator('.lane-adj .it.adjl').textContent()));
+  assert.equal(await p.locator('.head-adj').count(), 1);
+  assert.equal(await p.locator('.lane-ov').count(), 0);
+});
+await step('готові стилі: «Нуар» замінює граф і дає назву на таймлайні, є запис в історії', async () => {
+  await p.locator('.lane-adj .it.adjl').click(); await settle();
+  await p.locator('#inspector [data-a=adjRecipe][data-v=noir]').click(); await settle();
+  const r = await p.evaluate(() => { const o = window.VideoCut.S.project.overlays[0]; return { name: o.name, sat: o.cg.nodes.find(n => n.type === 'prim').p.sat }; });
+  assert.equal(r.name, 'Нуар'); assert.equal(r.sat, 0);
+  assert.ok(/Нуар/.test(await p.locator('.lane-adj .it.adjl').textContent()));
+  await at(2); const m = await mean(); assert.ok(Math.abs(m[0] - m[1]) < 6 && Math.abs(m[1] - m[2]) < 6, 'чорно-біле: ' + m);
+  await undo(); assert.equal(await p.evaluate(() => window.VideoCut.S.project.overlays[0].name), undefined);
+});
+await step('скинути корекцію повертає нейтральний граф', async () => {
+  await p.locator('.lane-adj .it.adjl').click(); await settle();
+  await p.locator('#inspector [data-a=adjReset]').click(); await settle();
+  assert.equal(await p.evaluate(() => window.VideoCut.S.project.overlays[0].cg.nodes.find(n => n.type === 'prim').p.sat), 1);
+});
 await step('вихід курсора за межі ділянки повертає ціль на кліп', async () => {
+  await p.locator('.lane-adj .it.adjl').click(); await p.locator('#inspector [data-a=adjOpen]').click(); await settle(); assert.equal(await p.locator('.cg-adj.on').count(), 1);
   await at(4.5); await settle();
   assert.equal(await p.locator('.cg-adj.on').count(), 0); assert.equal(await p.locator('.cg-title').textContent(), 'Граф кліпа');
 });

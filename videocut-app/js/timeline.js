@@ -89,7 +89,9 @@ export function initTimeline() {
     }
   });
   inner.addEventListener('dblclick', e => {
-    const it = e.target.closest('.it');
+    // після першого клацання таймлайн перемальовується, тому елемент шукаємо й за координатами
+    const it = e.target.closest('.it') || document.elementsFromPoint(e.clientX, e.clientY).find(x => x.classList?.contains('it'));
+    if (it && it.classList.contains('adjl')) { select(it.dataset.kind, it.dataset.id); window.dispatchEvent(new CustomEvent('vc-color', { detail: { adj: it.dataset.id } })); return; }
     if (it) { select(it.dataset.kind, it.dataset.id); emit('focus-inspector'); }
   });
   // файли з бібліотеки: «Відео 1» — вставити кліп, «Звук» — музика, решта — поверх (Відео 2)
@@ -237,7 +239,7 @@ export function render() {
 
   const adj = adjs.map((o, i) => {
     const d = Math.max(0.01, o.dur), a = Math.round(Math.min(o.fin || 0, d / 2) / d * 100), b = Math.round(Math.min(o.fout || 0, d / 2) / d * 100);
-    return `<div class="it adjl${selCls('overlay', o.id)}" data-kind="overlay" data-id="${o.id}" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + ar.rowOf.get(o.id) * ROW}px;height:${ROW - 4}px;--fi:${a}%;--fo:${100 - b}%;--am:${Math.round((o.amount ?? 1) * 100)}%">${icon('sliders')}<span>${esc(o.name || 'Корекція')} · ${Math.round((o.amount ?? 1) * 100)}%</span>${hnd}</div>`;
+    return `<div class="it adjl${selCls('overlay', o.id)}" data-kind="overlay" data-id="${o.id}" title="Корекція кольору ${fmt(o.start, true)} – ${fmt(o.start + o.dur, true)}. Двічі клацніть, щоб налаштувати колір" style="left:${o.start * pps}px;width:${Math.max(4, o.dur * pps)}px;top:${3 + ar.rowOf.get(o.id) * ROW}px;height:${ROW - 4}px;--fi:${a}%;--fo:${100 - b}%;--am:${Math.round((o.amount ?? 1) * 100)}%">${icon('sliders')}<span>${esc(o.name || 'Корекція')} · ${Math.round((o.amount ?? 1) * 100)}%</span>${hnd}</div>`;
   }).join('');
   const ov = graphics.map(o => {
     const label = o.type === 'text' ? (o.text || '').split('\n')[0] : o.type === 'emoji' ? (o.emoji || '') + ' ' + OV_LABEL.emoji : OV_LABEL[o.type];

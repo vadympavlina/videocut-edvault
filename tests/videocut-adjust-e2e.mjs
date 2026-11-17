@@ -39,7 +39,7 @@ await step('«Колір» → «+ Ділянка»: з’являється ш�
   await p.click('#pageSw [data-page=color]'); await settle(); await at(1);
   await p.click('#cgNewAdj'); await settle();
   const o = await ovs(); assert.equal(o.length, 1); assert.equal(o[0].type, 'adjust'); assert.ok(Math.abs(o[0].start - 1) < 0.1, 'старт ' + o[0].start);
-  assert.equal(await p.locator('.cg-title').textContent(), 'Граф ділянки');
+  assert.ok(/^Ділянка К1 · /.test(await p.locator('.cg-title').textContent()), await p.locator('.cg-title').textContent());
   assert.equal(await p.locator('.cg-adj.on').count(), 1);
 });
 await step('корекція ділянки змінює кадр лише всередині неї', async () => {
@@ -104,6 +104,12 @@ await step('вхідна мініатюра графа ділянки місти
   await p.waitForTimeout(900); const graded = await thumb();
   await p.evaluate(() => { delete window.VideoCut.S.project.clips[0].cg; window.VideoCut.commit(); });
   assert.ok(graded < plain - 20, `${plain} → ${graded}`);
+});
+await step('подвійний клац по шару на таймлайні відкриває «Колір» з цим шаром', async () => {
+  await p.click('#pageSw [data-page=edit]'); await settle(); await at(2);
+  assert.equal(await p.evaluate(() => document.body.dataset.page), 'edit');
+  await p.locator('.lane-adj .it.adjl').dblclick(); await settle();
+  assert.equal(await p.evaluate(() => document.body.dataset.page), 'color'); assert.equal(await p.locator('.cg-adj.on').count(), 1);
 });
 await step('вихід курсора за межі ділянки повертає ціль на кліп', async () => {
   await p.click('#pageSw [data-page=edit]'); await settle(); await p.locator('.lane-adj .it.adjl').click(); await p.locator('#inspector [data-a=adjOpen]').click(); await settle(); assert.equal(await p.locator('.cg-adj.on').count(), 1);

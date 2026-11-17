@@ -126,7 +126,7 @@ function renderAll() { renderStrip(); renderGraph(); renderInspector(); renderRe
 /* ═════════ смуга кліпів ═════════ */
 function renderStrip() {
   const box = $('cgClips'); if (!box) return;
-  const tt = document.querySelector('.cg-title'); if (tt) tt.textContent = curAdj() ? 'Граф ділянки' : 'Граф кліпа';
+  const tt = document.querySelector('.cg-title'); if (tt) { const a = curAdj(), n = a ? S.project.overlays.filter(o => o.type === 'adjust').indexOf(a) + 1 : 0; tt.textContent = a ? `Ділянка К${n} · ${fmtT(a.start)}–${fmtT(a.start + a.dur)}` : 'Граф кліпа'; }
   const L = layout(), cur = curAdj() ? null : curClip(), A = S.project.overlays.filter(o => o.type === 'adjust');
   box.innerHTML = L.map((l, i) => { const m = media.get(l.clip.mediaId), has = l.clip.cg && !isIdentityGraph(l.clip.cg); return `<button role="tab" class="cg-clip${l.clip === cur ? ' on' : ''}" data-i="${i}" aria-selected="${l.clip === cur}" title="${esc(m?.name || 'Кліп ' + (i + 1))}">${i + 1}${has ? '<i class="dot"></i>' : ''}</button>`; }).join('') +
     A.map((o, i) => `<button role="tab" class="cg-clip cg-adj${o.id === st.adj ? ' on' : ''}" data-adj="${o.id}" aria-selected="${o.id === st.adj}" title="Шар корекції ${fmtT(o.start)} – ${fmtT(o.start + o.dur)}">К${i + 1}</button>`).join('') +

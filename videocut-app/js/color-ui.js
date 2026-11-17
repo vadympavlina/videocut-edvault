@@ -70,6 +70,7 @@ export function initColorUi() {
   document.addEventListener('keydown', e => { if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === '2' || e.key === '1')) { e.preventDefault(); setPage(e.key === '2' ? 'color' : 'edit'); } });
   root.panel.innerHTML = `
     <div class="cg-head"><b class="cg-title">Граф кліпа</b><div class="cg-clips" id="cgClips" role="tablist" aria-label="Кліпи"></div>
+      <button class="btn btn-sm cg-new" id="cgNewAdj" title="Нова корекція на ділянку: від курсора, поверх відео">+ Ділянка</button>
       <span class="grow"></span>
       <button class="btn btn-sm" id="cgAdd" aria-haspopup="menu">${icon('plus')}Вузол</button>
  <button class="btn btn-sm" id="cgAll" data-tip="Застосувати граф цього кліпа до всіх кліпів проєкту">До всіх кліпів</button>
@@ -86,6 +87,7 @@ export function initColorUi() {
     <canvas id="scWave" width="248" height="130" aria-label="Осцилограф"></canvas><div class="sc-l">Векторскоп</div><canvas id="scVec" width="130" height="130" aria-label="Векторскоп"></canvas>`;
   wireGraphCanvas(); wireViewControls(); wireKfStrip();
   $('cgAdd').addEventListener('click', e => addMenu(e.currentTarget));
+  $('cgNewAdj').addEventListener('click', newAdjust);
   $('cgFit').addEventListener('click', fitView);
   $('cgTidy').addEventListener('click', () => { if (!curClip()) return; editGraph(g => tidyGraph(g)); renderGraph(); fitView(); done('вузли впорядковано'); });
   $('cgAll').addEventListener('click', () => {
@@ -128,9 +130,8 @@ function renderStrip() {
   const L = layout(), cur = curAdj() ? null : curClip(), A = S.project.overlays.filter(o => o.type === 'adjust');
   box.innerHTML = L.map((l, i) => { const m = media.get(l.clip.mediaId), has = l.clip.cg && !isIdentityGraph(l.clip.cg); return `<button role="tab" class="cg-clip${l.clip === cur ? ' on' : ''}" data-i="${i}" aria-selected="${l.clip === cur}" title="${esc(m?.name || 'Кліп ' + (i + 1))}">${i + 1}${has ? '<i class="dot"></i>' : ''}</button>`; }).join('') +
     A.map((o, i) => `<button role="tab" class="cg-clip cg-adj${o.id === st.adj ? ' on' : ''}" data-adj="${o.id}" aria-selected="${o.id === st.adj}" title="Шар корекції ${fmtT(o.start)} – ${fmtT(o.start + o.dur)}">К${i + 1}</button>`).join('') +
-    '<button class="cg-clip cg-new" id="cgNewAdj" title="Нова корекція на ділянку: від курсора, поверх відео" aria-label="Нова корекція на ділянку">+ Ділянка</button>';
+''; 
   box.onclick = e => {
-    if (e.target.closest('#cgNewAdj')) { newAdjust(); return; }
     const a = e.target.closest('[data-adj]'); if (a) { selectAdjust(a.dataset.adj); return; }
     const b = e.target.closest('[data-i]'); if (!b) return; const l = L[+b.dataset.i]; if (l) { st.adj = null; st.sel = null; seek(l.start + Math.min(0.05, (l.end - l.start) / 3)); onClipMaybeChanged(true); }
   };

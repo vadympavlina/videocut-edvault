@@ -1346,3 +1346,13 @@ body[data-page="edit"] .kf-strip{display:none}
 body.razor-on .tl-lanes,body.razor-on .tl-lanes .it{cursor:crosshair}
 .razor-line{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed #ef4444;pointer-events:none;z-index:6}
 #btnRazor.on{background:var(--accent-light);color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent-border)}
+
+/* редактор нод: перегляд вузла, виділення кількох, перейменування */
+.cn .cn-view{width:20px;height:20px;border-radius:5px;color:inherit;opacity:.55;display:grid;place-items:center;margin-left:auto}
+.cn .cn-view svg{width:13px;height:13px}.cn .cn-view:hover,.cn .cn-view.on{opacity:1}.cn .cn-view.on{background:rgba(0,0,0,.18)}
+.cn .cn-view + .cn-off{margin-left:2px}
+.cn.multi{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-border)}
+.cn.viewing{outline:2px solid #22c55e;outline-offset:2px}
+.cn-rename{width:100%;min-width:0;height:20px;border-radius:4px;border:1px solid var(--accent);background:var(--surface);color:var(--text);font:inherit;font-size:12px;padding:0 4px}
+.clr-viewing{display:inline-flex;align-items:center;gap:6px;margin-left:8px;padding:2px 4px 2px 10px;border-radius:8px;background:rgba(34,197,94,.16);color:#5fd39b;font-size:12.5px;font-weight:600}
+.clr-viewing svg{width:14px;height:14px}.clr-viewing[hidden]{display:none}

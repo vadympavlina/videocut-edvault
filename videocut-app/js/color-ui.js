@@ -8,7 +8,7 @@ import { parseCube } from './lut.js';
 import {
   COLOR_VIEW, NODE_TYPES, ADDABLE, MIX_MODES, DEFAULTS, RECIPES, newGraph, newNode, repairGraph, recipeGraph, graphOrder, isIdentityGraph,
   nodeNeutral, renderThumbs, curveTable, rgb2hsv, gpuAvailable, MASKABLE, MASK_SHAPES, maskDefault,
-  tidyGraph, matchCurves, animatedGraph, kfSet, kfRemove, kfAt, kfTimes, kfValue, getPath, setPath, hasKf,
+  tidyGraph, matchCurves, nodeId, animatedGraph, kfSet, kfRemove, kfAt, kfTimes, kfValue, getPath, setPath, hasKf,
 } from './color.js';
 import { drawWaveform, drawVector, drawHist, histogram } from './scopes.js';
 
@@ -54,7 +54,7 @@ export function setPage(p) {
   if (p === 'color' && !S.project.clips.length) { toast('Спершу додайте відео на таймлайн', 'warn'); return; }
   if (p === 'color' && !gpuAvailable()) toast('Ваш браузер не підтримує WebGL2: колірні вузли не застосовуватимуться. Оновіть браузер або відкрийте редактор у Chrome.', 'warn');
   st.page = p; document.body.dataset.page = p;
-  COLOR_VIEW.on = p === 'color'; COLOR_VIEW.split = 0; COLOR_VIEW.mask = null; COLOR_VIEW.bypass = false; st.pick = false;
+  COLOR_VIEW.on = p === 'color'; COLOR_VIEW.split = 0; COLOR_VIEW.mask = null; COLOR_VIEW.bypass = false; COLOR_VIEW.node = null; st.multi = new Set(); st.pick = false;
   for (const b of document.querySelectorAll('#pageSw [data-page]')) { const on_ = b.dataset.page === p; b.classList.toggle('on', on_); b.setAttribute('aria-selected', on_); }
   root.insp.hidden = p !== 'color'; root.panel.hidden = p !== 'color'; root.scopes.hidden = p !== 'color'; root.view.hidden = p !== 'color';
   $('inspector').hidden = p === 'color';
@@ -84,13 +84,16 @@ export function initColorUi() {
       <aside class="cg-rec" id="cgRec" aria-label="Рецепти"></aside></div>`;
   root.view.innerHTML = `<div class="clr-bar"><button class="btn btn-sm" id="clrBA" aria-pressed="false" data-tip="Порівняти до і після">До / Після</button>
     <button class="btn btn-sm" id="clrHold" data-tip="Утримуйте, щоб побачити оригінал">Оригінал</button>
-    <button class="btn btn-sm" id="clrPick" aria-pressed="false" data-tip="Піпетка: виберіть колір на кадрі для вузла HSL">${icon('dropper')}Піпетка</button></div>`;
+    <button class="btn btn-sm" id="clrPick" aria-pressed="false" data-tip="Піпетка: виберіть колір на кадрі для вузла HSL">${icon('dropper')}Піпетка</button>
+    <span class="clr-viewing" id="clrViewing" hidden>${icon('viewer')}<span></span><button class="btn btn-sm btn-icon" id="clrViewOff" aria-label="Повернутися до результату" data-tip="Повернутися до результату">${icon('x')}</button></span></div>`;
   root.scopes.innerHTML = `<div class="sc-tabs" role="tablist" aria-label="Вид осцилографа"><button role="tab" aria-selected="true" class="on" data-sc="luma">Яскравість</button><button role="tab" aria-selected="false" data-sc="rgb">RGB</button><button role="tab" aria-selected="false" data-sc="hist">Гістограма</button></div>
     <canvas id="scWave" width="248" height="130" aria-label="Осцилограф"></canvas><div class="sc-l">Векторскоп</div><canvas id="scVec" width="130" height="130" aria-label="Векторскоп"></canvas>`;
   wireGraphCanvas(); wireViewControls(); wireKfStrip();
   $('cgAdd').addEventListener('click', e => addMenu(e.currentTarget));
   $('cgNewAdj').addEventListener('click', newAdjust);
   $('cgXfer').addEventListener('click', e => xferMenu(e.currentTarget));
+  $('clrViewOff').addEventListener('click', () => { if (COLOR_VIEW.node) toggleView(COLOR_VIEW.node); });
+  st.multi = new Set();
   $('cgFit').addEventListener('click', fitView);
   $('cgTidy').addEventListener('click', () => { if (!curClip()) return; editGraph(g => tidyGraph(g)); renderGraph(); fitView(); done('вузли впорядковано'); });
   $('cgAll').addEventListener('click', () => {
@@ -162,13 +165,16 @@ function renderGraph() {
   $('cgHint').hidden = !!c && !!g && g.nodes.length > 3;
   if (!c) { nodesBox.innerHTML = '<div class="cg-empty">Немає кліпа під курсором. Перемістіть курсор на кліп.</div>'; wires.innerHTML = ''; return; }
   const virt = !g; if (!g) g = newGraph();
+  if (COLOR_VIEW.node && !g.nodes.some(n => n.id === COLOR_VIEW.node)) { COLOR_VIEW.node = null; requestDraw(); }
+  if (st.multi) for (const id of [...st.multi]) if (!g.nodes.some(n => n.id === id)) st.multi.delete(id);
   nodesBox.innerHTML = '';
+  syncViewChip(g);
   for (const n of g.nodes) {
     const T = NODE_TYPES[n.type], [t1, t2] = sub(n), neutral = nodeNeutral(n) && n.type !== 'in' && n.type !== 'out';
-    const d = h('div', `cn t-${n.type}${st.sel === n.id ? ' sel' : ''}${n.off ? ' off' : ''}${neutral && !n.off ? ' idle' : ''}`);
-    d.dataset.id = n.id; d.tabIndex = 0; d.setAttribute('role', 'group'); d.setAttribute('aria-label', `Вузол «${T.name}»: ${t1}, ${t2}`);
+    const d = h('div', `cn t-${n.type}${st.sel === n.id ? ' sel' : ''}${st.multi?.has(n.id) ? ' multi' : ''}${COLOR_VIEW.node === n.id ? ' viewing' : ''}${n.off ? ' off' : ''}${neutral && !n.off ? ' idle' : ''}`);
+    d.dataset.id = n.id; d.tabIndex = 0; d.setAttribute('role', 'group'); d.setAttribute('aria-label', `Вузол «${n.label || T.name}»: ${t1}, ${t2}`);
     d.style.cssText = `left:${n.x}px;top:${n.y}px;width:${NW}px;height:${NH}px;--nc:${T.color}`;
-    d.innerHTML = `<div class="cn-h"><b>${esc(T.name)}</b>${n.type === 'in' || n.type === 'out' ? '' : `<button class="cn-off" data-off aria-label="${n.off ? 'Увімкнути' : 'Вимкнути'} вузол" title="${n.off ? 'Увімкнути' : 'Вимкнути'}">${icon('eye')}</button>`}</div>
+    d.innerHTML = `<div class="cn-h"><b>${esc(n.label || T.name)}</b>${n.type === 'out' ? '' : `<button class="cn-view${COLOR_VIEW.node === n.id ? ' on' : ''}" data-view aria-label="Показати вихід вузла у перегляді" aria-pressed="${COLOR_VIEW.node === n.id}" title="Показати вихід вузла у перегляді (подвійний клац)">${icon('viewer')}</button>`}${n.type === 'in' || n.type === 'out' ? '' : `<button class="cn-off" data-off aria-label="${n.off ? 'Увімкнути' : 'Вимкнути'} вузол" title="${n.off ? 'Увімкнути' : 'Вимкнути'}">${icon('eye')}</button>`}</div>
       <div class="cn-b"><canvas class="cn-th" width="48" height="30"></canvas><div class="cn-t"><span>${esc(t1)}</span><small>${esc(t2)}</small></div></div>
       ${n.type !== 'in' ? `<i class="cn-port in" data-port="0" style="top:${portY(n, 0)}px"></i>` : ''}${n.type === 'mix' ? `<i class="cn-port in" data-port="1" style="top:${portY(n, 1)}px"></i>` : ''}${n.type !== 'out' ? `<i class="cn-port out" style="top:${portY(n, 0)}px"></i>` : ''}`;
     nodesBox.appendChild(d);
@@ -208,15 +214,26 @@ function wireGraphCanvas() {
     if (e.button === 2) return;
     const port = e.target.closest('.cn-port'), node = e.target.closest('.cn'), wire = e.target.closest('.w-hit');
     cv.focus({ preventScroll: true });
-    if (e.target.closest('[data-off]')) return;
+    if (e.target.closest('[data-off]') || e.target.closest('[data-view]')) return;
     const c = curClip(); if (!c) return;
+    const nowT = e.timeStamp;
+    if (lastDown && nowT - lastDown.t < 380 && Math.hypot(e.clientX - lastDown.x, e.clientY - lastDown.y) < 6 && !port) { lastDown = null; e.preventDefault(); onDbl(e); return; }
+    lastDown = { t: nowT, x: e.clientX, y: e.clientY };
     if (port && node) {
       const id = node.dataset.id, g = c.cg || newGraph();
       if (port.classList.contains('out')) { drag = { type: 'link', from: id }; }
       else { const pn = +port.dataset.port, ex = g.links.find(l => l.to === id && l.port === pn); if (ex) { drag = { type: 'link', from: ex.from, reuse: { to: id, port: pn } }; } else { drag = { type: 'inport', to: id, port: pn }; } }
     } else if (node) {
-      const id = node.dataset.id; if (st.sel !== id) selectNode(id);
-      const n = (c.cg || newGraph()).nodes.find(x => x.id === id), p = toWorld(e); drag = { type: 'node', id, dx: p.x - n.x, dy: p.y - n.y, moved: false };
+      const id = node.dataset.id, nn0 = (c.cg || newGraph()).nodes.find(x => x.id === id);
+      if ((e.shiftKey || e.ctrlKey || e.metaKey) && nn0 && nn0.type !== 'in' && nn0.type !== 'out') { // Shift/Ctrl: додати вузол до виділення
+        st.multi.has(id) ? st.multi.delete(id) : st.multi.add(id); if (st.sel && nodeOf(st.sel) && !['in', 'out'].includes(nodeOf(st.sel).type)) st.multi.add(st.sel);
+        markMulti(); e.preventDefault(); return;
+      }
+      if (!st.multi.has(id)) st.multi.clear(); markMulti();
+      if (st.sel !== id) selectNode(id);
+      const n = nn0, p = toWorld(e);
+      const grp = st.multi.has(id) && st.multi.size > 1 ? [...st.multi].map(q => { const m = (c.cg || newGraph()).nodes.find(x => x.id === q); return m ? { id: q, dx: p.x - m.x, dy: p.y - m.y } : null; }).filter(Boolean) : null;
+      drag = { type: 'node', id, dx: p.x - n.x, dy: p.y - n.y, moved: false, grp };
     } else if (wire) { st.selLink = { from: wire.dataset.from, to: wire.dataset.to, port: +wire.dataset.port }; drawWires(); drag = null; return; }
     else { st.selLink = null; drag = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: st.view.x, vy: st.view.y }; cv.classList.add('panning'); drawWires(); }
     cv.setPointerCapture(e.pointerId); e.preventDefault();
@@ -228,8 +245,11 @@ function wireGraphCanvas() {
     if (drag.type === 'node') {
       const p = toWorld(e), n = g.nodes.find(x => x.id === drag.id); if (!n) return;
       if (!drag.moved) { if (!c.cg) { c.cg = newGraph(); } drag.moved = true; }
-      const nn = c.cg.nodes.find(x => x.id === drag.id); nn.x = Math.round(p.x - drag.dx); nn.y = Math.round(p.y - drag.dy);
-      const d = $('cgNodes').querySelector(`[data-id="${drag.id}"]`); d.style.left = nn.x + 'px'; d.style.top = nn.y + 'px'; drawWires(c.cg); return;
+      for (const m of drag.grp || [{ id: drag.id, dx: drag.dx, dy: drag.dy }]) {
+        const nn = c.cg.nodes.find(x => x.id === m.id); if (!nn) continue; nn.x = Math.round(p.x - m.dx); nn.y = Math.round(p.y - m.dy);
+        const d = $('cgNodes').querySelector(`[data-id="${m.id}"]`); if (d) { d.style.left = nn.x + 'px'; d.style.top = nn.y + 'px'; }
+      }
+      drawWires(c.cg); return;
     }
     if (drag.type === 'link') {
       const a = g.nodes.find(x => x.id === drag.from), p = toWorld(e); if (!a) return;
@@ -262,11 +282,31 @@ function wireGraphCanvas() {
     const mx = e.clientX - r.left, my = e.clientY - r.top; v.x = mx - (mx - v.x) * k / v.k; v.y = my - (my - v.y) * k / v.k; v.k = k; applyView();
   }, { passive: false });
   cv.addEventListener('click', e => {
+    const vw = e.target.closest('[data-view]'); if (vw) { toggleView(vw.closest('.cn').dataset.id); return; }
     const off = e.target.closest('[data-off]'); if (off) { const id = off.closest('.cn').dataset.id; editGraph(g => { const n = g.nodes.find(x => x.id === id); n.off = !n.off; if (!n.off) delete n.off; }); renderGraph(); touch(); done('вузол вимкнено/увімкнено'); }
   });
+  const onDbl = e => {
+    const c = curClip(); if (!c) return;
+    // після першого клацання вузли можуть перемалюватися, тому елемент шукаємо й за координатами
+    const under = document.elementsFromPoint(e.clientX, e.clientY), node = e.target.closest('.cn') || under.find(x => x.classList?.contains('cn')), wire = e.target.closest('.w-hit') || (node ? null : under.find(x => x.classList?.contains('w-hit'))), at = toWorld(e);
+    if (node) { toggleView(node.dataset.id); return; }
+    if (wire) { const link = { from: wire.dataset.from, to: wire.dataset.to, port: +wire.dataset.port }; popup(e.clientX, e.clientY, ADDABLE.map(t => ({ t: 'Вставити: ' + NODE_TYPES[t].name, dot: NODE_TYPES[t].color, on: () => addNode(t, false, { link }) }))); return; }
+    popup(e.clientX, e.clientY, ADDABLE.map(t => ({ t: 'Додати: ' + NODE_TYPES[t].name, dot: NODE_TYPES[t].color, on: () => addNode(t, false, { at: { x: Math.round(at.x - NW / 2), y: Math.round(at.y - NH / 2) } }) })));
+  };
+  // подвійний клац визначаємо самі: вузли й з’єднання перемальовуються після першого клацання, і браузер губить подію dblclick
+  let lastDown = null;
   cv.addEventListener('contextmenu', e => { const node = e.target.closest('.cn'); e.preventDefault(); if (node) nodeMenu(node.dataset.id, e.clientX, e.clientY); });
   cv.addEventListener('keydown', e => {
     const id = st.sel, g = curGraph(); if (!g) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.target.closest('input') && ['c', 'v', 'd', 'a'].includes(e.key.toLowerCase())) {
+      e.preventDefault(); const k = e.key.toLowerCase();
+      if (k === 'c') copyNodes(); else if (k === 'v') pasteNodes(); else if (k === 'd') { if (copyNodes(true)) pasteNodes(); } else { st.multi = new Set(g.nodes.filter(n => n.type !== 'in' && n.type !== 'out').map(n => n.id)); markMulti(); }
+      return;
+    }
+    if (e.key === 'F2' && id && nodeOf(id) && !['in', 'out'].includes(nodeOf(id).type)) { e.preventDefault(); renameNode(id); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !e.target.closest('input') && st.multi?.size > 1) { e.preventDefault(); removeMany([...st.multi]); return; }
+    if (e.key === 'Escape' && st.multi?.size) { st.multi.clear(); markMulti(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && !e.target.closest('input')) {
       e.preventDefault();
       if (st.selLink) { const l = st.selLink; editGraph(gr => { gr.links = gr.links.filter(x => !(x.from === l.from && x.to === l.to && x.port === l.port)); }); st.selLink = null; renderGraph(); touch(); done('з’єднання видалено'); }
@@ -289,8 +329,24 @@ function removeNode(id) {
   });
   st.sel = 'in'; renderGraph(); renderInspector(); touch(); done('вузол видалено');
 }
-function addNode(type, quiet = false) {
+function addNode(type, quiet = false, opt = {}) {
   let nid;
+  if (g0count() >= 38) { toast('У графі не може бути більше 40 вузлів', 'warn'); return; }
+  const link = opt.link || st.selLink; // виділене з’єднання: нова нода вставляється в нього
+  if (opt.at || link) {
+    editGraph(g => {
+      const a = link && g.nodes.find(n => n.id === link.from), b = link && g.nodes.find(n => n.id === link.to);
+      const n = newNode(type, opt.at ? opt.at.x : Math.round((a.x + b.x) / 2), opt.at ? opt.at.y : Math.round((a.y + b.y) / 2) + (b.x - a.x < NW * 2 ? NH + 20 : 0));
+      g.nodes.push(n);
+      if (link && g.links.some(l => l.from === link.from && l.to === link.to && l.port === link.port)) {
+        g.links = g.links.filter(l => !(l.from === link.from && l.to === link.to && l.port === link.port));
+        g.links.push({ from: link.from, to: n.id, port: 0 }, { from: n.id, to: link.to, port: link.port });
+      }
+      nid = n.id; Object.assign(g, repairGraph(g) || g);
+    });
+    st.selLink = null; st.sel = nid; renderGraph(); renderInspector(); touch(); if (!quiet) done('вузол «' + NODE_TYPES[type].name + '»');
+    return;
+  }
   editGraph(g => {
     const sel = g.nodes.find(n => n.id === st.sel), outN = g.nodes.find(n => n.type === 'out');
     const after = sel && sel.type !== 'out' ? sel : g.nodes.find(n => n.id === (g.links.find(l => l.to === outN.id)?.from)) || g.nodes.find(n => n.type === 'in');
@@ -305,6 +361,7 @@ function addNode(type, quiet = false) {
   });
   st.sel = nid; renderGraph(); renderInspector(); fitView(); touch(); if (!quiet) done('вузол «' + NODE_TYPES[type].name + '»');
 }
+const g0count = () => (curGraph() || newGraph()).nodes.length;
 function dupNode(id) {
   const n = nodeOf(id); if (!n || n.type === 'in' || n.type === 'out') return; let nid;
   editGraph(g => { const m = { ...JSON.parse(JSON.stringify(n)), id: 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), x: n.x + 30, y: n.y + NH + 20 }; g.nodes.push(m); nid = m.id; });
@@ -353,11 +410,75 @@ function matchTo(ref) {
   renderAll(); touch(true); done('зіставлено з кліпом ' + (layout().indexOf(ref) + 1));
   toast('Колір зіставлено. Вузол «Криві» можна підправити або ослабити', 'ok', 4000);
 }
+/* ═════════ перегляд вузла, виділення кількох, копіювання, перейменування ═════════ */
+function toggleView(id) {
+  const n = nodeOf(id); if (!n || n.type === 'out') return;
+  COLOR_VIEW.node = COLOR_VIEW.node === id ? null : id;
+  for (const d of $('cgNodes').querySelectorAll('.cn')) { const on_ = d.dataset.id === COLOR_VIEW.node; d.classList.toggle('viewing', on_); d.querySelector('[data-view]')?.classList.toggle('on', on_); d.querySelector('[data-view]')?.setAttribute('aria-pressed', on_); }
+  syncViewChip(); requestDraw(); queueScopes();
+}
+function syncViewChip(g = curGraph()) {
+  const el = $('clrViewing'); if (!el) return;
+  const n = COLOR_VIEW.node && g?.nodes.find(q => q.id === COLOR_VIEW.node);
+  el.hidden = !n;
+  if (n) { el.querySelector('span').textContent = 'Перегляд вузла: ' + (n.label || NODE_TYPES[n.type].name); }
+}
+function markMulti() { for (const d of $('cgNodes').querySelectorAll('.cn')) d.classList.toggle('multi', !!st.multi?.has(d.dataset.id)); }
+let nodeClip = null; // скопійовані вузли разом із внутрішніми з’єднаннями
+function copyNodes(quiet = false) {
+  const g = curGraph(); if (!g) return false;
+  const ids = new Set(st.multi?.size ? st.multi : st.sel ? [st.sel] : []);
+  const nodes = g.nodes.filter(n => ids.has(n.id) && n.type !== 'in' && n.type !== 'out');
+  if (!nodes.length) { if (!quiet) toast('Виберіть вузол (Shift — кілька), який треба скопіювати', 'warn'); return false; }
+  const keep = new Set(nodes.map(n => n.id));
+  nodeClip = JSON.parse(JSON.stringify({ nodes, links: g.links.filter(l => keep.has(l.from) && keep.has(l.to)) }));
+  if (!quiet) toast(nodes.length === 1 ? 'Вузол скопійовано' : `Скопійовано вузлів: ${nodes.length}`, 'ok');
+  return true;
+}
+function pasteNodes() {
+  if (!nodeClip) { toast('Спершу скопіюйте вузли (Ctrl+C)', 'warn'); return; }
+  const cur = curGraph() || newGraph();
+  if (cur.nodes.length + nodeClip.nodes.length > 40) { toast('У графі не може бути більше 40 вузлів', 'warn'); return; }
+  const map = new Map(), made = [];
+  const minX = Math.min(...nodeClip.nodes.map(n => n.x)), maxY = Math.max(...nodeClip.nodes.map(n => n.y));
+  editGraph(g => {
+    // нові вузли кладемо нижче скопійованих, зберігаючи взаємне розташування
+    for (const n of nodeClip.nodes) { const m = JSON.parse(JSON.stringify(n)); m.id = nodeId(); map.set(n.id, m.id); m.x = n.x - minX + Math.max(20, minX); m.y = n.y + (maxY - Math.min(...nodeClip.nodes.map(q => q.y))) + NH + 24; g.nodes.push(m); made.push(m.id); }
+    for (const l of nodeClip.links) g.links.push({ from: map.get(l.from), to: map.get(l.to), port: l.port });
+    Object.assign(g, repairGraph(g) || g);
+  });
+  st.multi = new Set(made); st.sel = made[0]; st.selLink = null;
+  renderGraph(); renderInspector(); touch(); done(made.length === 1 ? 'вузол вставлено' : `вставлено вузлів: ${made.length}`);
+}
+function removeMany(ids) {
+  const list = ids.filter(id => { const n = nodeOf(id); return n && n.type !== 'in' && n.type !== 'out'; });
+  if (!list.length) return;
+  editGraph(g => {
+    for (const id of list) {
+      const src = g.links.find(l => l.to === id && l.port === 0)?.from, outs = g.links.filter(l => l.from === id);
+      g.nodes = g.nodes.filter(x => x.id !== id); g.links = g.links.filter(l => l.from !== id && l.to !== id);
+      if (src) for (const o of outs) if (!g.links.some(l => l.to === o.to && l.port === o.port)) g.links.push({ from: src, to: o.to, port: o.port });
+    }
+    Object.assign(g, repairGraph(g) || g);
+  });
+  st.multi.clear(); st.sel = 'in'; renderGraph(); renderInspector(); touch(); done(`видалено вузлів: ${list.length}`);
+}
+function renameNode(id) {
+  const n = nodeOf(id), d = $('cgNodes').querySelector(`[data-id="${id}"] .cn-h b`); if (!n || !d) return;
+  const inp = h('input', 'cn-rename'); inp.value = n.label || ''; inp.placeholder = NODE_TYPES[n.type].name; inp.maxLength = 24; inp.setAttribute('aria-label', 'Назва вузла');
+  d.replaceWith(inp); inp.focus(); inp.select();
+  let fin = false;
+  const commit_ = ok => { if (fin) return; fin = true; if (ok) { editGraph(() => { const m = nodeOf(id); if (!m) return; const v = inp.value.trim().slice(0, 24); if (v) m.label = v; else delete m.label; }); done('назва вузла'); } renderGraph(); $('cgCanvas').focus({ preventScroll: true }); };
+  inp.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') commit_(true); else if (e.key === 'Escape') commit_(false); });
+  inp.addEventListener('blur', () => commit_(true)); inp.addEventListener('pointerdown', e => e.stopPropagation());
+}
 function nodeMenu(id, x, y) {
   const n = nodeOf(id); if (!n) return; selectNode(id);
   const items = [];
   if (n.type !== 'in' && n.type !== 'out') items.push({ t: n.off ? 'Увімкнути' : 'Вимкнути', on: () => { editGraph(g => { const m = g.nodes.find(q => q.id === id); m.off = !m.off; if (!m.off) delete m.off; }); renderGraph(); touch(); done('вузол вимкнено/увімкнено'); } }, { t: 'Дублювати', on: () => dupNode(id) }, { t: 'Скинути параметри', on: () => { editGraph(g => { const m = g.nodes.find(q => q.id === id); m.p = DEFAULTS[m.type](); delete m.kf; }); renderGraph(); renderInspector(); touch(); done('вузол скинуто'); } }, { t: 'Видалити', danger: true, on: () => removeNode(id) });
   else items.push({ t: 'Цей вузол видаляти не можна', on: () => { } });
+  if (n.type !== 'out') items.unshift({ t: COLOR_VIEW.node === id ? 'Сховати перегляд вузла' : 'Показати вихід вузла у перегляді', on: () => toggleView(id) });
+  if (n.type !== 'in' && n.type !== 'out') items.push({ t: 'Перейменувати (F2)', on: () => renameNode(id) }, { t: 'Копіювати (Ctrl+C)', on: () => { st.multi = st.multi?.has(id) ? st.multi : new Set(); copyNodes(); } }, { t: 'Вставити (Ctrl+V)', on: () => pasteNodes() });
   popup(x, y, items);
 }
 

@@ -16,7 +16,7 @@
     "test:scenarios": "node tests/videocut-scenarios-e2e.mjs",
     "test:captions": "node tests/videocut-captions-e2e.mjs",
     "test:cut": "node tests/videocut-cut-e2e.mjs && node tests/videocut-colorxfer-e2e.mjs",
-    "test:color": "node tests/videocut-color-e2e.mjs && node tests/videocut-color-ui-e2e.mjs && node tests/videocut-adjust-e2e.mjs"
+    "test:color": "node tests/videocut-color-e2e.mjs && node tests/videocut-color-ui-e2e.mjs && node tests/videocut-adjust-e2e.mjs && node tests/videocut-nodes-e2e.mjs"
   },
   "devDependencies": {
     "axe-core": "^4.14.0",

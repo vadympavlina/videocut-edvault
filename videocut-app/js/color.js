@@ -190,7 +190,7 @@ export function repairGraph(cg) {
   for (const n of cg.nodes.slice(0, 40)) {
     if (!isObj(n) || typeof n.id !== 'string' || !NODE_TYPES[n.type] || seen.has(n.id)) continue;
     seen.add(n.id);
-    nodes.push({ id: n.id.slice(0, 24), type: n.type, x: num(n.x, 0, -5000, 5000), y: num(n.y, 0, -5000, 5000), ...(n.off ? { off: true } : {}), ...(MASKABLE.includes(n.type) && fixMask(n.mask) ? { mask: fixMask(n.mask) } : {}), ...(fixKf(n.kf) && n.type !== 'in' ? { kf: fixKf(n.kf) } : {}), p: fixParams(n.type, n.p) });
+    nodes.push({ id: n.id.slice(0, 24), type: n.type, x: num(n.x, 0, -5000, 5000), y: num(n.y, 0, -5000, 5000), ...(n.off ? { off: true } : {}), ...(typeof n.label === 'string' && n.label.trim() ? { label: n.label.trim().slice(0, 24) } : {}), ...(MASKABLE.includes(n.type) && fixMask(n.mask) ? { mask: fixMask(n.mask) } : {}), ...(fixKf(n.kf) && n.type !== 'in' ? { kf: fixKf(n.kf) } : {}), p: fixParams(n.type, n.p) });
   }
   if (nodes.filter(n => n.type === 'in').length !== 1 || nodes.filter(n => n.type === 'out').length !== 1) return undefined;
   const ids = new Set(nodes.map(n => n.id)), links = [], used = new Set();
@@ -469,6 +469,7 @@ class GPU {
       setU?.(u, P);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     };
+    const showView = tex => pass('out', tex, res.get(inId).tex, null, u => { u('uSplit', 0); u('uAmt', 1); });
     // вхід тримаємо до кінця: він потрібен виходу для «До / Після» і загальної сили
     const release = id => { if (id === inId) return; const r = (refs.get(id) || 0) - 1; refs.set(id, r); if (r <= 0 && res.get(id)?.own) { res.get(id).own.busy = false; } };
     let last = null;
@@ -479,7 +480,7 @@ class GPU {
       let outTex, own = null;
       if (n.type === 'in') { own = this.take(W, H); pass('in', this.src, null, own); outTex = own.t; }
       else if (isOut) { pass('out', A.tex, res.get(inId).tex, null, u => { u('uSplit', opts.split || 0); u('uAmt', n.p.amount ?? 1); }); outTex = null; }
-      else if (nodeNeutral(n) && !(n.type === 'hsl' && opts.mask === n.id)) { outTex = A.tex; own = null; res.set(n.id, { tex: outTex, own: null }); if (collected) collected.set(n.id, null); continue; }
+      else if (nodeNeutral(n) && !(n.type === 'hsl' && opts.mask === n.id)) { outTex = A.tex; own = null; res.set(n.id, { tex: outTex, own: null }); if (collected) collected.set(n.id, null); if (opts.view === n.id) { showView(outTex); break; } continue; }
       else {
         own = this.take(W, H); const p = n.p;
         const wv = (w, a) => wheelRGB(w, a);
@@ -497,6 +498,7 @@ class GPU {
         outTex = own.t;
       }
       res.set(n.id, { tex: outTex, own });
+      if (opts.view === n.id && !isOut && outTex) { showView(outTex); break; } // «перегляд вузла»: показуємо його вихід і далі не рахуємо
       if (collected && !isOut) collected.set(n.id, this.read(own, W, H));
       if (collected && isOut) collected.set('__out', null);
       if (fa) release(fa); if (fb) release(fb);
@@ -520,14 +522,15 @@ export const __gpu = () => MAIN; // для тестів (імітація втр
 // застосовує граф до всього вмісту ctx.canvas (перегляд і експорт)
 let frameNo = 0;
 // Стан вікна «Колір» лише для перегляду: роздільник «До / Після», показ маски HSL, вимкнення корекції. В експорті не діє.
-export const COLOR_VIEW = { on: false, split: 0, mask: null, bypass: false };
+export const COLOR_VIEW = { on: false, split: 0, mask: null, bypass: false, node: null }; // node — показати вихід цього вузла замість результату
 export function applyGraph(ctx, W, H, cg, luts = [], opts = {}) {
   const v = !opts.export && COLOR_VIEW.on ? COLOR_VIEW : null;
   if (!cg || v?.bypass) return false;
   cg = animatedGraph(cg, opts.t || 0);
   const mask = v?.mask && cg.nodes.some(n => n.id === v.mask) ? v.mask : null, split = v?.split || 0;
-  if (isIdentityGraph(cg) && !mask) return false;
-  const ok = MAIN.run(ctx.canvas, cg, W, H, luts, { seed: (++frameNo % 1000) * 0.137, mask, split });
+  const view = v?.node && cg.nodes.some(n => n.id === v.node && n.type !== 'out') ? v.node : null;
+  if (isIdentityGraph(cg) && !mask && !view) return false;
+  const ok = MAIN.run(ctx.canvas, cg, W, H, luts, { seed: (++frameNo % 1000) * 0.137, mask, split, view });
   if (!ok) return false;
   ctx.save(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'copy'; ctx.drawImage(MAIN.cv, 0, 0, W, H); ctx.restore();
   return true;

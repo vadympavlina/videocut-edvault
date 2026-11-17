@@ -1,5 +1,6 @@
 // Сторінка «Колір»: перегляд До/Після, осцилографи, інспектор вузла (колеса, криві, HSL…), редактор вузлів і рецепти.
-import { S, on, commit, clipAt, layout, clipDur, media } from './state.js';
+import { S, on, commit, clipAt, layout, clipDur, media, select } from './state.js';
+import { addOverlay } from './ops.js';
 import { requestDraw, renderRaw, seek, previewCanvas } from './player.js';
 import { $, icon, toast, paintRanges } from './ui.js';
 import { parseCube } from './lut.js';
@@ -20,7 +21,9 @@ const r2 = v => Math.round(v * 100) / 100;
 const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(r2(v));
 
 /* ═════════ поточний кліп і граф ═════════ */
-const curLayout = () => clipAt(S.t, layout());
+// Ціль редагування: кліп під курсором або шар корекції (st.adj). Шар повертаємо в тій самій формі, що й розкладку кліпа.
+const curAdj = () => { if (!st.adj) return null; const o = S.project.overlays.find(x => x.id === st.adj && x.type === 'adjust'); if (!o) st.adj = null; return o || null; };
+const curLayout = () => { const a = curAdj(); return a ? { start: a.start, end: a.start + a.dur, clip: a } : clipAt(S.t, layout()); };
 export const curClip = () => curLayout()?.clip || null;
 const luts = () => S.project.luts || [];
 const curGraph = () => curClip()?.cg || null;
@@ -30,7 +33,7 @@ function editGraph(fn) {
   fn(c.cg, c);
   return true;
 }
-const curT = () => { const l = curLayout(); return l ? Math.max(0, S.t - l.start) : 0; };
+const curT = () => { const l = curLayout(); return l ? Math.min(Math.max(0, l.end - l.start), Math.max(0, S.t - l.start)) : 0; };
 // значення параметра зараз (з урахуванням ключових кадрів)
 function valAt(id, path) { const n = nodeOf(id); if (!n) return 0; const k = n.kf?.[path]; return k ? kfValue(k, curT()) : getPath(n, path); }
 // запис параметра: якщо він анімований, пишемо ключ у поточний момент
@@ -95,9 +98,21 @@ export function initColorUi() {
   on('time', () => { if (st.page === 'color') { onClipMaybeChanged(); queueScopes(); queueRecipeThumbs(); updateKfHead(); if (curGraph()?.nodes.some(hasKf)) { queueThumbs(); const nn = nodeOf(selId); if (nn && hasKf(nn)) for (const e of root.insp.querySelectorAll('.crow, .wheel')) e._refresh?.(); updateMaskOverlay(); } } });
   on('project', () => { if (st.page === 'color') { if (!S.project.clips.length) { setPage('edit'); return; } onClipMaybeChanged(true); queueThumbs(); queueScopes(); queueRecipeThumbs(); } });
   on('select', () => { });
+  window.addEventListener('vc-color', e => { const id = e.detail?.adj; if (!id) return; setPage('color'); selectAdjust(id); });
+}
+function selectAdjust(id) {
+  const o = S.project.overlays.find(x => x.id === id && x.type === 'adjust'); if (!o) return;
+  st.adj = id; st.sel = null; select('overlay', id);
+  if (S.t < o.start || S.t >= o.start + o.dur) seek(o.start + Math.min(0.05, o.dur / 3));
+  onClipMaybeChanged(true);
+}
+function newAdjust() {
+  if (!S.project.clips.length) return;
+  const o = addOverlay('adjust'); if (o) { st.adj = o.id; st.sel = null; onClipMaybeChanged(true); toast('Додано шар корекції. Змінюйте колір, а межі ділянки тягніть на таймлайні в «Монтажі»', 'ok', 4500); }
 }
 let lastClipId = null;
 function onClipMaybeChanged(force) {
+  if (st.adj) { const a = curAdj(); if (!a || S.t < a.start - 1e-3 || S.t > a.start + a.dur + 1e-3) st.adj = null; }
   const c = curClip(), id = c?.id || null;
   if (!force && id === lastClipId) return;
   lastClipId = id;
@@ -109,9 +124,16 @@ function renderAll() { renderStrip(); renderGraph(); renderInspector(); renderRe
 /* ═════════ смуга кліпів ═════════ */
 function renderStrip() {
   const box = $('cgClips'); if (!box) return;
-  const L = layout(), cur = curClip();
-  box.innerHTML = L.map((l, i) => { const m = media.get(l.clip.mediaId), has = l.clip.cg && !isIdentityGraph(l.clip.cg); return `<button role="tab" class="cg-clip${l.clip === cur ? ' on' : ''}" data-i="${i}" aria-selected="${l.clip === cur}" title="${esc(m?.name || 'Кліп ' + (i + 1))}">${i + 1}${has ? '<i class="dot"></i>' : ''}</button>`; }).join('');
-  box.onclick = e => { const b = e.target.closest('[data-i]'); if (!b) return; const l = L[+b.dataset.i]; if (l) { st.sel = null; seek(l.start + Math.min(0.05, (l.end - l.start) / 3)); } };
+  const tt = document.querySelector('.cg-title'); if (tt) tt.textContent = curAdj() ? 'Граф ділянки' : 'Граф кліпа';
+  const L = layout(), cur = curAdj() ? null : curClip(), A = S.project.overlays.filter(o => o.type === 'adjust');
+  box.innerHTML = L.map((l, i) => { const m = media.get(l.clip.mediaId), has = l.clip.cg && !isIdentityGraph(l.clip.cg); return `<button role="tab" class="cg-clip${l.clip === cur ? ' on' : ''}" data-i="${i}" aria-selected="${l.clip === cur}" title="${esc(m?.name || 'Кліп ' + (i + 1))}">${i + 1}${has ? '<i class="dot"></i>' : ''}</button>`; }).join('') +
+    A.map((o, i) => `<button role="tab" class="cg-clip cg-adj${o.id === st.adj ? ' on' : ''}" data-adj="${o.id}" aria-selected="${o.id === st.adj}" title="Шар корекції ${fmtT(o.start)} – ${fmtT(o.start + o.dur)}">К${i + 1}</button>`).join('') +
+    '<button class="cg-clip cg-new" id="cgNewAdj" title="Нова корекція на ділянку: від курсора, поверх відео" aria-label="Нова корекція на ділянку">+ Ділянка</button>';
+  box.onclick = e => {
+    if (e.target.closest('#cgNewAdj')) { newAdjust(); return; }
+    const a = e.target.closest('[data-adj]'); if (a) { selectAdjust(a.dataset.adj); return; }
+    const b = e.target.closest('[data-i]'); if (!b) return; const l = L[+b.dataset.i]; if (l) { st.adj = null; st.sel = null; seek(l.start + Math.min(0.05, (l.end - l.start) / 3)); onClipMaybeChanged(true); }
+  };
 }
 
 /* ═════════ полотно вузлів ═════════ */

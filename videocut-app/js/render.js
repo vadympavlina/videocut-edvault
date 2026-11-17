@@ -345,6 +345,30 @@ export function drawClipFrame(ctx, l, f, W, H, t, opts = {}) {
   if (a > 0.001) { ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0, 0, W, H); }
 }
 
+// Шар корекції: застосовує колірний граф до всього, що вже намальовано під ним (кліп і нижчі накладання).
+// Сила = amount × плавний вхід/вихід; частковий ефект — змішування зі знімком «до».
+const adjCv = [null];
+export function adjustAmount(o, t) {
+  const a = o.amount ?? 1, d = o.dur, tt = t - o.start;
+  let k = 1;
+  const fin = Math.min(o.fin || 0, d / 2), fout = Math.min(o.fout || 0, d / 2);
+  if (fin > 0 && tt < fin) k = Math.min(k, tt / fin);
+  if (fout > 0 && tt > d - fout) k = Math.min(k, (d - tt) / fout);
+  return Math.max(0, Math.min(1, a * smooth(Math.max(0, Math.min(1, k)))));
+}
+function drawAdjust(ctx, o, W, H, t, opts) {
+  if (!o.cg) return;
+  const k = adjustAmount(o, t);
+  if (k <= 0.001) return;
+  const exp = !!(opts.export || opts.colorFinal), luts = S.project.luts || [];
+  if (k >= 0.999) { applyGraph(ctx, W, H, o.cg, luts, { export: exp, t: t - o.start }); return; }
+  const c = adjCv[0] || (adjCv[0] = document.createElement('canvas'));
+  if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
+  const g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.globalCompositeOperation = 'copy'; g.drawImage(ctx.canvas, 0, 0, W, H);
+  if (!applyGraph(ctx, W, H, o.cg, luts, { export: exp, t: t - o.start })) return;
+  ctx.save(); ctx.globalAlpha = 1 - k; ctx.globalCompositeOperation = 'source-over'; ctx.drawImage(c, 0, 0); ctx.restore();
+}
+
 // opts.editing — перегляд на паузі: елементи показуємо повністю, без плавної появи, щоб їх було видно й зручно редагувати
 export function renderScene(ctx, W, H, t, provider, L = layout(), opts = {}) {
   const p = S.project;
@@ -365,6 +389,7 @@ export function renderScene(ctx, W, H, t, provider, L = layout(), opts = {}) {
   }
   for (const o of p.overlays) {
     if (t < o.start || t >= o.start + o.dur) continue;
+    if (o.type === 'adjust') { if (!opts.colorBypass && laneVisible('ov')) drawAdjust(ctx, o, W, H, t, opts); continue; }
     if (!laneVisible(isLayer(o) ? 'v2' : 'ov')) continue;
     const frame = o.type === 'video' && opts.ovFrame ? opts.ovFrame(o, (o.in || 0) + (t - o.start)) : null;
     if (hasKf(o)) { const r = resolveKf('overlay', o, t - o.start); drawAnimated(ctx, r, W, H, k, t, opts.editing, frame); const tb = textBoxes.get(r); if (tb != null) textBoxes.set(o, tb); }

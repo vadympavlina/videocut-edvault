@@ -135,7 +135,7 @@ let idn = 0;
 export const nodeId = () => 'n' + Date.now().toString(36).slice(-4) + (idn++).toString(36) + Math.random().toString(36).slice(2, 5);
 export const newNode = (type, x = 0, y = 0) => ({ id: nodeId(), type, x, y, p: DEFAULTS[type]() });
 export function newGraph() {
-  const a = { id: 'in', type: 'in', x: 20, y: 40, p: {} }, b = { id: 'out', type: 'out', x: 520, y: 40, p: {} };
+  const a = { id: 'in', type: 'in', x: 20, y: 40, p: {} }, b = { id: 'out', type: 'out', x: 520, y: 40, p: { amount: 1 } };
   const p = { ...newNode('prim', 200, 40), id: 'prim1' };
   return { v: 1, nodes: [a, p, b], links: [{ from: 'in', to: 'prim1', port: 0 }, { from: 'prim1', to: 'out', port: 0 }] };
 }

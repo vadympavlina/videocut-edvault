@@ -46,6 +46,8 @@ export function repairProject(p) {
   out.luts = Array.isArray(p.luts) ? p.luts.filter(l => isObj(l) && l.id && Number.isInteger(l.size) && l.size >= 2 && l.size <= 64 && typeof l.b64 === 'string').slice(0, 24) : [];
   for (const c of out.clips) if (c.stab && !(isObj(c.stab) && Array.isArray(c.stab.dx) && Array.isArray(c.stab.dy) && c.stab.dx.length === c.stab.dy.length && c.stab.dx.every(Number.isFinite) && c.stab.dy.every(Number.isFinite) && Number.isFinite(c.stab.fps) && Number.isFinite(c.stab.t0))) { delete c.stab; delete c.stabOn; }
   for (const c of out.clips) if (c.lut && !out.luts.some(l => l.id === c.lut.id)) delete c.lut;
+  // шар корекції: граф обов'язковий, сила 0..1, плавні вхід і вихід у секундах
+  out.overlays = out.overlays.filter(o => { if (o.type !== 'adjust') return true; const g = repairGraph(o.cg); if (!g) return false; o.cg = g; o.amount = Math.min(1, Math.max(0, Number.isFinite(o.amount) ? o.amount : 1)); o.fin = Math.max(0, num(o.fin, 0)); o.fout = Math.max(0, num(o.fout, 0)); o.above = !!o.above; return true; });
   for (const c of out.clips) if (c.cg !== undefined) { const g = repairGraph(c.cg); if (g) c.cg = g; else delete c.cg; }
   for (const o of [...out.clips, ...out.overlays]) { if (!Array.isArray(o.kf)) delete o.kf; else { o.kf = o.kf.filter(k => isObj(k) && Number.isFinite(k.t)).sort((x, y) => x.t - y.t); if (!o.kf.length) delete o.kf; } }
   for (const o of [...out.overlays, ...out.music]) if (o.row != null && !(Number.isInteger(o.row) && o.row >= 0 && o.row < 50)) delete o.row;

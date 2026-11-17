@@ -1,6 +1,6 @@
 // Операції редагування — кожна змінює проєкт і записує крок в історію.
 import { splitKf } from './kf.js';
-import { splitGraphKf, shiftGraphKf, freezeGraph } from './color.js';
+import { splitGraphKf, shiftGraphKf, freezeGraph, newGraph } from './color.js';
 import { S, media, uid, emit, layout, clipAt, srcTime, clipDur, musicDur, mainEnd, duration, commit, select, selectMany, findSel, rippleShift, outputSize, ASPECTS, laneOf, laneLocked } from './state.js';
 import { applyLayout } from './layer.js';
 import { CC_PRESETS, capStyle } from './cc.js';
@@ -53,6 +53,7 @@ function splitList(list, id, t) {
   if (o.type === 'video') b.in = (o.in || 0) + (t - o.start); // друга половина відео продовжується з того ж місця
   o.dur = t - o.start;
   splitKf('overlay', o, b, t - o.start);
+  if (o.type === 'adjust') { splitGraphKf(o.cg, b.cg, t - o.start); o.fout = 0; b.fin = 0; }
   list.splice(i + 1, 0, b);
   return b;
 }
@@ -203,6 +204,7 @@ export function addOverlay(type, extra = {}) {
   else if (type === 'arrow') o = { ...base, x: 0.28, y: 0.3, w: 0.18, h: 0.16 * W / H, color: '#ef4444', stroke: 10 };
   else if (type === 'blur') o = { ...base, x: 0.35, y: 0.35, w: 0.3, h: 0.2, strength: 20, pixel: false, dur: 5 };
   else if (type === 'spot') o = { ...base, x: 0.3, y: 0.25, w: 0.4, h: 0.45, dim: 0.62, shape: 'rect', dur: 5, fade: true };
+  else if (type === 'adjust') o = { ...base, cg: extra.cg || newGraph(), amount: 1, fin: 0.3, fout: 0.3, above: false, dur: extra.dur || Math.min(5, Math.max(1, mainEnd() - base.start) || 5), fade: false };
   else if (type === 'image') {
     const m = media.get(extra.mediaId);
     if (extra.start != null) base.start = extra.start;
@@ -217,8 +219,8 @@ export function addOverlay(type, extra = {}) {
     applyLayout(o, extra.layout || 'corner');
     if (extra.cx != null) { o.x = Math.min(1 - o.w, Math.max(0, extra.cx - o.w / 2)); o.y = Math.min(1 - o.h, Math.max(0, extra.cy - o.h / 2)); }
   }
-  p.overlays.push(o);
-  commit();
+  if (o.type === 'adjust') p.overlays.unshift(o); else p.overlays.push(o); // шар корекції лежить під рештою накладань: чіпає лише відео
+  commit(o.type === 'adjust' ? 'Шар корекції' : undefined);
   select('overlay', o.id);
   return o;
 }

@@ -582,6 +582,7 @@ window.addEventListener('beforeunload', e => { if (isRecording() || asrBusy() ||
       { label: 'Рамка', ic: 'rect', enabled: has, run: () => addOverlay('rect') },
       { label: 'Прожектор (затемнити решту)', ic: 'spot', enabled: has, run: () => addOverlay('spot') },
       { label: 'Розмиття (сховати дані)', ic: 'blur', enabled: has, run: () => addOverlay('blur') },
+      { label: 'Корекція кольору на ділянці', ic: 'sliders', enabled: has, run: () => addOverlay('adjust') },
       { label: 'Прогрес-бар', ic: 'progress', enabled: has, run: () => addOverlay('progress') },
       { label: 'Емодзі-стікер…', ic: 'smile', enabled: has, run: () => showLibTab('elements') },
     ] },

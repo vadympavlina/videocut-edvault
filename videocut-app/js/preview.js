@@ -64,7 +64,7 @@ export function initPreviewLayer() {
   }, { passive: false });
 }
 
-const visible = o => S.t >= o.start && S.t < o.start + o.dur;
+const visible = o => o.type !== 'adjust' && S.t >= o.start && S.t < o.start + o.dur;
 const boxOf = o => { const r = hasKf(o) ? resolveKf('overlay', o, S.t - o.start) : o; return { x: r.x, y: r.y, w: r.w, h: o.type === 'text' ? (textBoxes.get(o) || 0.1) : r.h }; };
 
 function norm(e) {

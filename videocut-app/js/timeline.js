@@ -20,8 +20,8 @@ export function setLaneSize(k) {
   try { localStorage.setItem('vc_lanes', k); } catch { /* не страшно */ }
   if (scroll) render();
 }
-const OV_LABEL = { video: 'Відео поверх', text: 'Текст', rect: 'Рамка', arrow: 'Стрілка', blur: 'Розмиття', spot: 'Прожектор', image: 'Зображення', emoji: 'Емодзі', progress: 'Прогрес' };
-const OV_ICON = { video: 'pip', text: 'text', rect: 'rect', arrow: 'arrow', blur: 'blur', spot: 'spot', image: 'image', emoji: 'smile', progress: 'progress' };
+const OV_LABEL = { video: 'Відео поверх', text: 'Текст', rect: 'Рамка', arrow: 'Стрілка', blur: 'Розмиття', spot: 'Прожектор', image: 'Зображення', emoji: 'Емодзі', progress: 'Прогрес', adjust: 'Корекція' };
+const OV_ICON = { video: 'pip', text: 'text', rect: 'rect', arrow: 'arrow', blur: 'blur', spot: 'spot', image: 'image', emoji: 'smile', progress: 'progress', adjust: 'sliders' };
 const TR_NAMES = { fade: 'Розчинення', black: 'Через чорне', slide: 'Зсув', wipe: 'Шторка', zoom: 'Наближення' };
 
 let scroll, inner, lanes, heads, ruler, playheadEl, rangeEl, insertEl, hoverEl, snapEl;
@@ -709,6 +709,7 @@ function moveTimed(P, list, dt) {
       o.in = Math.max(0, (orig.in || 0) + (o.start - orig.start));
     }
     o.dur = end - o.start;
+    if (o.type === 'adjust' && orig.cg) { o.cg = structuredClone(orig.cg); shiftGraphKf(o.cg, o.start - orig.start); } // ключі кольору лишаються на своїх місцях у часі
   } else {
     o.dur = Math.max(0.2, snapEdge(end + dt, o.id) - orig.start);
     if (o.type === 'video') { const m = media.get(o.mediaId); if (m) o.dur = Math.min(o.dur, m.duration - (o.in || 0)); }

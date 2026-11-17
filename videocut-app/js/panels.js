@@ -131,7 +131,7 @@ function drawLibrary() {
     const vids = [...media.values()].filter(m => m.kind === 'video');
     const el = (type, ic, name, sub) => `<button class="elem" data-el="${type}" data-q="${name} ${sub}" data-tip="${sub}">${icon(ic)}<b>${name}</b></button>`;
     const pick = (attr, m, src) => `<button class="mcard img-pick" ${attr}="${m.id}" data-q="${esc(m.name)}" title="${esc(m.name)}"><div class="mthumb">${src ? `<img src="${src}" alt="">` : icon(m.kind === 'image' ? 'image' : 'video')}${m.kind === 'video' ? `<span class="mdur">${fmt(m.duration)}</span>` : ''}</div><div class="mname">${esc(m.name)}</div></button>`;
-    const shapes = [['arrow', 'arrow', 'Стрілка', 'Вказати на кнопку чи деталь'], ['rect', 'rect', 'Рамка', 'Обвести важливе'], ['spot', 'spot', 'Прожектор', 'Затемнити все, крім області'], ['blur', 'blur', 'Розмиття', 'Сховати пароль, пошту, обличчя'], ['progress', 'progress', 'Прогрес', 'Смужка внизу — скільки ще лишилось']];
+    const shapes = [['arrow', 'arrow', 'Стрілка', 'Вказати на кнопку чи деталь'], ['rect', 'rect', 'Рамка', 'Обвести важливе'], ['spot', 'spot', 'Прожектор', 'Затемнити все, крім області'], ['blur', 'blur', 'Розмиття', 'Сховати пароль, пошту, обличчя'], ['progress', 'progress', 'Прогрес', 'Смужка внизу — скільки ще лишилось'], ['adjust', 'sliders', 'Корекція', 'Колір на ділянці таймлайну']];
     setHtml(body, `${searchBox('Пошук елемента')}
       ${lfold('shapes', 'Пояснення на кадрі', shapes.length, `<div class="elems">${shapes.map(s => el(...s)).join('')}</div>`)}
       ${lfold('stickers', 'Емодзі-стікери', EMOJIS.length, `<div class="emoji-grid">${EMOJIS.map(e => `<button data-emoji="${e}" data-q="стікер емодзі" title="Додати ${e}">${e}</button>`).join('')}</div>`)}
@@ -523,8 +523,8 @@ function lookCards(c, m) {
 }
 
 // ── Текст і елементи ──
-const OV_NAMES = { video: 'Відео поверх', text: 'Текст', rect: 'Рамка', arrow: 'Стрілка', blur: 'Розмиття', spot: 'Прожектор', image: 'Зображення', emoji: 'Емодзі', progress: 'Прогрес-бар' };
-const OV_ICONS = { video: 'pip', text: 'text', rect: 'rect', arrow: 'arrow', blur: 'blur', spot: 'spot', image: 'image', emoji: 'smile', progress: 'progress' };
+const OV_NAMES = { video: 'Відео поверх', text: 'Текст', rect: 'Рамка', arrow: 'Стрілка', blur: 'Розмиття', spot: 'Прожектор', image: 'Зображення', emoji: 'Емодзі', progress: 'Прогрес-бар', adjust: 'Корекція кольору' };
+const OV_ICONS = { video: 'pip', text: 'text', rect: 'rect', arrow: 'arrow', blur: 'blur', spot: 'spot', image: 'image', emoji: 'smile', progress: 'progress', adjust: 'sliders' };
 const STYLES = [['shadow', 'Тінь'], ['outline', 'Контур'], ['box', 'Плашка'], ['none', 'Просто']];
 
 // ── час показу накладання ──
@@ -580,12 +580,26 @@ function keySection(o) {
 }
 
 function animSeg(o) {
-  if (o.type === 'progress') return '';
+  if (o.type === 'progress' || o.type === 'adjust') return '';
   const keys = o.type === 'text' ? Object.keys(ANIMS) : (o.type === 'blur' || o.type === 'spot') ? ['none', 'fade'] : ['none', 'fade', 'up', 'pop'];
   return seg('anim', 'Ефект', keys.map(k => [k, ANIMS[k]]), animOf(o));
 }
 
+function adjustPanel(o) {
+  const tabs = [
+    ['look', 'Корекція', () => sec('Колір на ділянці', `<p class="hint">Колір зміниться в усьому кадрі лише на цьому проміжку часу. Накладання над ним (текст, рамки) не чіпається.</p>
+      <div class="iaction"><button class="btn btn-primary btn-sm btn-block" data-a="adjOpen">${icon('sliders')}Налаштувати колір</button></div>
+      ${range('amount', 'Сила', 0, 1, 0.01, o.amount ?? 1, '%', Math.round((o.amount ?? 1) * 100) + '%', true)}
+      ${range('fin', 'Плавний вхід, с', 0, 3, 0.1, o.fin || 0, ' с')}${range('fout', 'Плавний вихід, с', 0, 3, 0.1, o.fout || 0, ' с')}`) +
+      sec('Дії', `<div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="adjFit">${icon('fit')}На весь кліп під курсором</button></div>
+      <div class="iaction"><button class="btn btn-outline btn-sm btn-block" data-a="adjAbove">${icon('front')}Поверх усіх накладань</button><button class="btn btn-outline btn-sm btn-block" data-a="adjBelow">${icon('front')}Лише на відео (під накладаннями)</button></div>`)],
+    ['time', 'Час', () => timing(o)]];
+  return head('sliders', 'Корекція кольору', `${fmt(o.start, true)} – ${fmt(o.start + o.dur, true)}`) +
+    actions(act('dup', 'copy', 'Дублювати'), act('del', 'trash', 'Видалити', 'data-danger="1"')) + tabbed('ov-adjust', tabs);
+}
+
 function overlayPanel(o) {
+  if (o.type === 'adjust') return adjustPanel(o);
   if (isLayer(o)) return layerPanel(o);
   let look = null, text = null;
   if (o.type === 'text') {
@@ -821,6 +835,9 @@ function onClick(e) {
     case 'front': moveZ(1); break;
     case 'mute': if (o) { o.muted = !o.muted; commit(); } break;
     case 'toCursor': if (o) { o.start = S.t; commit(); } break;
+    case 'adjOpen': if (o) window.dispatchEvent(new CustomEvent('vc-color', { detail: { adj: o.id } })); break;
+    case 'adjFit': if (o) { const l = layout().find(x => S.t >= x.start && S.t < x.end) || layout()[0]; if (l) { o.start = l.start; o.dur = l.end - l.start; commit('Корекція на весь кліп'); } } break;
+    case 'adjAbove': case 'adjBelow': if (o) { const a = S.project.overlays, i = a.indexOf(o); if (i >= 0) { a.splice(i, 1); if (b.dataset.a === 'adjAbove') a.push(o); else a.unshift(o); commit(b.dataset.a === 'adjAbove' ? 'Корекція над накладаннями' : 'Корекція лише на відео'); } } break;
     case 'fitMusic': if (o) trimMusicToVideo(o); break;
     case 'norm': normalizeSel(); break;
     case 'freeze': freezeFrame(3); break;

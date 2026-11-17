@@ -292,6 +292,7 @@ details.more summary:hover{color:var(--text)}
 .ov-blur,.ov-spot{--ov:#64748b}
 .ov-arrow,.ov-rect{--ov:#ef4444}
 .ov-image{--ov:#0ea5e9}
+.ov-adjust{--ov:#f59e0b}
 .cc{top:3px;height:24px;background:color-mix(in srgb,var(--cc) 22%,var(--surface));border:1px solid color-mix(in srgb,var(--cc) 60%,transparent);color:color-mix(in srgb,var(--cc) 55%,var(--text));font-weight:500}
 .clip{top:3px;height:60px;border:1.5px solid var(--clip);background:transparent;align-items:flex-start;padding:4px 7px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
 .clip .lbl{background:rgba(0,0,0,.6);color:#fff;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;max-width:100%}
@@ -1255,6 +1256,8 @@ body[data-page="color"] .pv-bar .pv-tools{display:none}
 .cg-title{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text2)}
 .cg-clips{display:flex;gap:4px;overflow-x:auto;max-width:46%;scrollbar-width:none;padding:2px}
 .cg-clip{position:relative;min-width:30px;height:28px;padding:0 8px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--text2);background:var(--surface2)}
+.cg-adj{color:#b45309}
+.cg-new{font-weight:500;border:1px dashed var(--border2);background:transparent}
 .cg-clip.on{background:var(--accent-light);color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent-border)}
 .cg-clip .dot{position:absolute;right:3px;top:3px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
 .cg-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 250px}

@@ -1,6 +1,6 @@
 // Вкладка «Субтитри» (вигляд, інструменти, список) і властивості одного субтитру.
 import { S, commit, emit, select, outputSize, uid } from './state.js';
-import { CC_FONTS, CC_BGS, CC_ANIMS, CC_PRESETS, capStyle, presetThumb, loadCcFont, onCcFont, cps, splitCaption, capMaxChars, tidyCaptions } from './cc.js';
+import { CC_FONTS, CC_BGS, CC_ANIMS, CC_HI, CC_DEFAULT, CC_LOOK_KEYS, CC_PRESETS, capStyle, presetThumb, loadCcFont, onCcFont, cps, splitCaption, capMaxChars, tidyCaptions } from './cc.js';
 import { addCaption, setCaptions } from './ops.js';
 import { seek } from './player.js';
 import { toSrt, toVtt } from './srt.js';
@@ -41,6 +41,7 @@ const seg = (f, opts, cur, cls = '') => `<div class="seg ${cls}">${opts.map(([v,
 const range = (f, label, min, max, step, val, show) => `<div class="field"><label>${label}<span class="aux" data-cc-show="${f}">${show}</span></label><input type="range" data-cc-range="${f}" min="${min}" max="${max}" step="${step}" value="${val}"></div>`;
 const fold = (key, label, html) => `<details class="fold cc-fold" data-cc-fold="${key}" ${open.has(key) ? 'open' : ''}><summary><span>${label}</span></summary><div class="fold-body">${html}</div></details>`;
 const pct = v => Math.round(v * 100) + '%';
+const fmtR = (f, v) => f === 'size' ? v : f === 'lineH' ? v.toFixed(2).replace('.', ',') : f === 'spacing' ? (v * 100).toFixed(1).replace('.', ',') + '%' : pct(v);
 
 function styleBody(st) {
   const nearPos = POS.reduce((a, b) => Math.abs(b[0] - st.y) < Math.abs(a[0] - st.y) ? b : a)[0];
@@ -51,12 +52,18 @@ function styleBody(st) {
       <button class="chip${st.upper ? ' on' : ''}" data-cc-toggle="upper">${icon(st.upper ? 'check' : 'text')}ВЕЛИКІ ЛІТЕРИ</button>
     </div>
     <div class="field"><label>Колір тексту</label>${swatches(st.color, 'color')}</div>
-    <div class="field"><label>Фон</label>${seg('bg', Object.entries(CC_BGS), st.bg)}</div>
+    <div class="field"><label>Фон</label>${seg('bg', Object.entries(CC_BGS), st.bg, 'cc-grid3')}</div>
     ${st.bg === 'box' || st.bg === 'block' ? `<div class="field"><label>Колір фону</label>${swatches(st.bgColor, 'bgColor')}</div>${range('bgAlpha', 'Непрозорість фону', 0.2, 1, 0.02, st.bgAlpha, pct(st.bgAlpha))}` : ''}
+    ${st.bg === 'outline' ? `<div class="field"><label>Колір обведення</label>${swatches(st.strokeColor, 'strokeColor')}</div>${range('strokeW', 'Товщина обведення', 0, 0.45, 0.01, st.strokeW, pct(st.strokeW))}` : ''}
+    ${st.bg === 'shadow' || st.bg === 'glow' || st.bg === 'depth' ? `<div class="field"><label>${st.bg === 'glow' ? 'Колір сяйва' : 'Колір тіні'}</label>${swatches(st.shadowColor, 'shadowColor')}</div>${range('shadow', st.bg === 'glow' ? 'Сила сяйва' : st.bg === 'depth' ? 'Глибина' : 'М’якість тіні', 0, 1.5, 0.02, st.shadow, pct(st.shadow))}` : ''}
     <div class="field"><label>Анімація</label>${seg('anim', Object.entries(CC_ANIMS), st.anim, 'cc-grid3')}</div>
-    ${st.anim === 'karaoke' || st.anim === 'chunk' ? `<div class="field"><label>Колір слова, що звучить</label>${swatches(st.hi, 'hi')}</div>` : ''}
+    ${st.anim === 'karaoke' || st.anim === 'chunk' ? `<div class="field"><label>Підсвітка слова, що звучить</label>${seg('hiMode', Object.entries(CC_HI), st.hiMode, 'cc-grid2')}</div><div class="field"><label>Колір підсвітки</label>${swatches(st.hi, 'hi')}</div>` : ''}
     <div class="field"><label>Розташування</label>${seg('y', POS, nearPos)}<p class="hint">Або просто перетягніть субтитр на перегляді.</p></div>
     ${range('width', 'Ширина', 0.4, 0.96, 0.01, st.width, pct(st.width))}
+    ${range('spacing', 'Інтервал між літерами', -0.05, 0.3, 0.005, st.spacing, fmtR('spacing', st.spacing))}
+    ${range('lineH', 'Міжрядковий інтервал', 0.9, 1.8, 0.02, st.lineH, fmtR('lineH', st.lineH))}
+    <div class="chips"><button class="chip${st.safe ? ' on' : ''}" data-cc-toggle="safe" aria-pressed="${!!st.safe}">${icon(st.safe ? 'check' : 'text')}Безпечна зона соцмереж</button></div>
+    <p class="hint">Тримає субтитри подалі від кнопок і підписів Reels, TikTok, Shorts (у вертикальному відео).</p>
     <div class="field"><label>Рядків в одному субтитрі</label>${seg('lines', [[1, 'Один'], [2, 'Два']], st.lines)}<p class="hint">Враховується в автосубтитрах і «Розбити довгі».</p></div>`;
 }
 
@@ -183,6 +190,7 @@ export async function capTabClick(b) {
   if (b.dataset.ccView) { capView = b.dataset.ccView; emit('show-tab', 'captions'); return true; }
   if (b.dataset.ccPreset) {
     const st = W(), pr = CC_PRESETS[b.dataset.ccPreset];
+    for (const k of CC_LOOK_KEYS) st[k] = CC_DEFAULT[k]; // залишки попереднього шаблону (обведення, підсвітка…) не переходять у новий
     Object.assign(st, pr, { preset: b.dataset.ccPreset });
     delete st.name;
     if (b.dataset.ccPreset === 'reels' && st.y > 0.62) st.y = 0.72;
@@ -262,7 +270,7 @@ export function capTabInput(e) {
     const f = t.dataset.ccRange, v = +t.value;
     W()[f] = v;
     const sh = body.querySelector(`[data-cc-show="${f}"]`);
-    if (sh) sh.textContent = f === 'size' ? v : pct(v);
+    if (sh) sh.textContent = fmtR(f, v);
     emit('project', { live: true, from: 'lib' });
     return true;
   }

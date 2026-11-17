@@ -462,6 +462,7 @@ body.recording .tl,body.recording .lib,body.recording .insp,body.recording .topb
 .cc-fonts button{height:34px;padding:0 8px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cc-fonts button.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);color:var(--accent)}
 .seg.cc-grid3{display:grid;grid-template-columns:repeat(3,1fr)}
+.seg.cc-grid2{display:grid;grid-template-columns:repeat(2,1fr)}.seg.cc-grid2 button{white-space:normal;line-height:1.15;min-height:30px}
 .seg.cc-grid3 button{white-space:normal;line-height:1.15;height:auto;min-height:30px;padding:3px 4px;text-align:center}
 .row2 .input{flex:1;min-width:0}
 .cc-danger{color:var(--danger,#ef4444)!important;margin-top:10px}

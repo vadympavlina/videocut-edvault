@@ -12,14 +12,18 @@ export const CC_FONTS = {
   caveat: { name: 'Caveat', fam: 'Caveat', n: 600, b: 700, scale: 1.3 },
 };
 
-export const CC_BGS = { none: 'Немає', shadow: 'Тінь', outline: 'Контур', box: 'Плашка', block: 'Блок' };
+export const CC_BGS = { none: 'Немає', shadow: 'Тінь', outline: 'Контур', box: 'Плашка', block: 'Блок', glow: 'Сяйво', depth: 'Об’єм' };
+export const CC_HI = { color: 'Колір', pill: 'Плашка', underline: 'Підкреслення', scale: 'Збільшення' };
 export const CC_ANIMS = { none: 'Без анімації', fade: 'Плавно', pop: 'Виринання', karaoke: 'Підсвітка слова', words: 'Слово за словом', chunk: 'По 1–3 слова' };
 
 export const CC_DEFAULT = {
   preset: 'classic', font: 'inter', size: 46, bold: false, upper: false,
   color: '#ffffff', hi: '#ffd43b', bg: 'box', bgColor: '#000000', bgAlpha: 0.66,
   y: 0.93, width: 0.84, lines: 2, anim: 'none', show: true,
+  strokeColor: '#000000', strokeW: 0.2, shadow: 0.28, shadowColor: '#000000', spacing: 0, lineH: 1.24, hiMode: 'color', safe: false,
 };
+// усе, що задає «вигляд» шаблону: перед застосуванням нового шаблону повертаємо до типового
+export const CC_LOOK_KEYS = ['strokeColor', 'strokeW', 'shadow', 'shadowColor', 'spacing', 'lineH', 'hiMode', 'safe', 'bgColor', 'bgAlpha', 'hi'];
 
 // шаблони — набір готових значень; позиція й «показувати» лишаються як були
 export const CC_PRESETS = {
@@ -31,6 +35,14 @@ export const CC_PRESETS = {
   pill: { name: 'Яскрава плашка', font: 'rubik', size: 48, bold: true, upper: false, color: '#ffffff', hi: '#ffd43b', bg: 'block', bgColor: '#4F6BF4', bgAlpha: 1, anim: 'pop', width: 0.8 },
   news: { name: 'Новини', font: 'oswald', size: 48, bold: false, upper: true, color: '#ffffff', bg: 'block', bgColor: '#000000', bgAlpha: 0.82, anim: 'fade', width: 0.9 },
   hand: { name: 'Від руки', font: 'caveat', size: 50, bold: true, upper: false, color: '#ffffff', bg: 'shadow', anim: 'words', width: 0.8 },
+  hormozi: { name: 'Динамічний', font: 'montserrat', size: 78, bold: true, upper: true, color: '#ffffff', hi: '#ffd43b', bg: 'outline', strokeW: 0.26, anim: 'chunk', width: 0.88, lines: 2, safe: true },
+  podcast: { name: 'Подкаст', font: 'rubik', size: 54, bold: true, upper: false, color: '#ffffff', hi: '#22c55e', hiMode: 'pill', bg: 'shadow', shadow: 0.35, anim: 'karaoke', width: 0.84, safe: true },
+  under: { name: 'Підкреслення', font: 'montserrat', size: 52, bold: true, upper: false, color: '#ffffff', hi: '#ffd43b', hiMode: 'underline', bg: 'shadow', anim: 'karaoke', width: 0.84 },
+  zoom: { name: 'Крупно слово', font: 'montserrat', size: 66, bold: true, upper: true, color: '#ffffff', hi: '#ff3d6e', hiMode: 'scale', bg: 'depth', anim: 'karaoke', width: 0.86, spacing: 0.01 },
+  neon: { name: 'Неон', font: 'montserrat', size: 50, bold: false, upper: false, color: '#ffffff', bg: 'glow', shadowColor: '#4F6BF4', shadow: 0.9, anim: 'fade', width: 0.82 },
+  depth: { name: 'Об’ємний', font: 'rubik', size: 60, bold: true, upper: true, color: '#ffffff', hi: '#ffd43b', bg: 'depth', shadowColor: '#000000', anim: 'pop', width: 0.84 },
+  minimal: { name: 'Мінімалізм', font: 'inter', size: 42, bold: false, upper: false, color: '#ffffff', bg: 'shadow', shadow: 0.5, anim: 'fade', width: 0.78, lineH: 1.3 },
+  wide: { name: 'Широкий', font: 'oswald', size: 50, bold: false, upper: true, color: '#ffffff', bg: 'shadow', anim: 'none', width: 0.8, spacing: 0.08 },
 };
 
 // стиль проєкту зі значеннями за замовчуванням (старі проєкти мали лише size/color/bg/pos)
@@ -41,6 +53,11 @@ export function capStyle(p) {
   if (!CC_FONTS[o.font]) o.font = 'inter';
   if (!CC_BGS[o.bg]) o.bg = 'box';
   if (!CC_ANIMS[o.anim]) o.anim = 'none';
+  if (!CC_HI[o.hiMode]) o.hiMode = 'color';
+  const n = (v, d, a, b) => (Number.isFinite(+v) ? Math.min(b, Math.max(a, +v)) : d);
+  o.strokeW = n(o.strokeW, 0.2, 0, 0.45); o.shadow = n(o.shadow, 0.28, 0, 1.5); o.spacing = n(o.spacing, 0, -0.05, 0.3); o.lineH = n(o.lineH, 1.24, 0.9, 1.8);
+  for (const k of ['strokeColor', 'shadowColor']) if (!/^#[0-9a-f]{6}$/i.test(o[k] || '')) o[k] = '#000000';
+  o.safe = !!o.safe;
   return o;
 }
 export function ccFont(st, size) {
@@ -76,7 +93,8 @@ export function capWords(c) {
   const hit = wcache.get(c);
   if (hit && hit.text === c.text && hit.dur === c.dur) return hit.list;
   const words = String(c.text || '').split(/\s+/).filter(Boolean);
-  const wt = words.map(w => w.replace(/[^\p{L}\p{N}]/gu, '').length + 2 + (/[.,!?;:…—]$/.test(w) ? 3 : 0));
+  // вага слова: літери й голосні (складів більше — слово довше), мала пауза між словами, довша після розділового знака
+  const wt = words.map(w => { const l = w.replace(/[^\p{L}\p{N}]/gu, ''); const v = (l.match(/[аеєиіїоуюяaeiouy]/gi) || []).length; return l.length * 0.6 + v * 1.1 + 1.6 + (/[.!?…]$/.test(w) ? 4 : /[,;:—]$/.test(w) ? 2.5 : 0); });
   const total = wt.reduce((a, b) => a + b, 0) || 1;
   let acc = 0;
   const list = words.map((w, i) => { const s = acc / total * c.dur; acc += wt[i]; return { w, s, e: acc / total * c.dur }; });
@@ -179,6 +197,49 @@ export function tidyCaptions(list) {
 // швидкість читання (символів за секунду)
 export const cps = c => String(c.text || '').replace(/\s+/g, ' ').trim().length / Math.max(0.1, c.dur);
 
+
+// ── розумні розриви рядків ──
+// Короткі службові слова не лишаємо в кінці рядка, число тримаємо з одиницею, пунктуацію — зі словом.
+const GLUE_AFTER = new Set(['в', 'у', 'з', 'із', 'зі', 'до', 'на', 'по', 'за', 'від', 'о', 'об', 'при', 'про', 'без', 'над', 'під', 'для', 'між', 'через', 'і', 'й', 'та', 'а', 'але', 'що', 'як', 'чи', 'не', 'ні', 'це', 'то', 'ж', 'б', 'би', 'мій', 'ця', 'цей', 'ці', 'я', 'ти', 'ми', 'ви']);
+const clean = w => w.toLocaleLowerCase('uk').replace(/[^\p{L}\p{N}]/gu, '');
+const isNum = w => /^[\d\s.,]+%?$/.test(w.replace(/[^\p{L}\p{N}.,%]/gu, '')) && /\d/.test(w);
+export function glueAfter(words, i) {
+  const w = words[i], n = words[i + 1];
+  if (n == null) return false;
+  if (/[.!?…]$/.test(w)) return false;
+  if (/^[—–\-%.,;:!?…»)]/.test(n)) return true;                     // тире й знаки лишаються при слові
+  if (/[«(]$/.test(w)) return true;
+  if (GLUE_AFTER.has(clean(w)) && clean(w).length <= 4) return true;   // прийменники, сполучники
+  if (isNum(w) && !isNum(n) && clean(n).length <= 6) return true;       // 5 хвилин, 20 %
+  const cap = x => /^\p{Lu}/u.test(x.replace(/^[«"(]+/, ''));
+  if (i > 0 && cap(w) && cap(n) && !/[.!?…,;:]$/.test(w) && !/[.!?…]$/.test(words[i - 1])) return true; // ім’я й прізвище
+  return false;
+}
+// widths — ширини слів, space — ширина пробілу. Повертає масив рядків (масивів індексів слів).
+// Мінімізуємо нерівність рядків; «сирота» (одне коротке слово в останньому рядку) і розрив після службового слова штрафуються.
+export function breakLines(words, widths, space, maxW) {
+  const n = words.length;
+  if (!n) return [];
+  const best = new Array(n + 1).fill(Infinity), from = new Array(n + 1).fill(0);
+  best[0] = 0;
+  const lineW = (a, b) => { let w = 0; for (let i = a; i < b; i++) w += widths[i] + (i > a ? space : 0); return w; };
+  for (let b = 1; b <= n; b++) {
+    for (let a = b - 1; a >= 0; a--) {
+      const w = lineW(a, b), last = b === n;
+      if (w > maxW && b - a > 1) break;                                  // довші не рахуємо (крім одного слова, що саме не вміщається)
+      const slack = Math.max(0, maxW - w) / maxW;
+      let cost = last ? slack * slack * 0.8 : slack * slack;
+      if (w > maxW) cost += 50 + (w - maxW) / maxW * 100;
+      if (last && b - a === 1 && n > 1 && w < maxW * 0.45) cost += 2.2;   // сирота
+      if (!last && glueAfter(words, b - 1)) cost += 3;
+      const t = best[a] + cost + 0.02;                                   // невеликий штраф за кожен рядок — менше зайвих переносів
+      if (t < best[b]) { best[b] = t; from[b] = a; }
+    }
+  }
+  const out = []; for (let b = n; b > 0; b = from[b]) out.unshift(Array.from({ length: b - from[b] }, (_, j) => from[b] + j));
+  return out;
+}
+
 // ── малювання ──
 export const capBox = { id: null, x: 0, y: 0, w: 0, h: 0 }; // де намальовано субтитр (частки кадру), для перегляду
 
@@ -224,29 +285,36 @@ export function drawCaption(ctx, c, W, H, k, st, t, alphaMul = 1, track = true) 
   ctx.font = ccFont(st, size);
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = (st.spacing || 0) * size + 'px';
   const disp = i => st.upper ? all[i].w.toLocaleUpperCase('uk') : all[i].w;
   const space = ctx.measureText(' ').width;
   const box = st.bg === 'box', block = st.bg === 'block';
   const pad = box ? size * 0.32 : block ? size * 0.5 : 0;
   const maxW = Math.max(size * 2, st.width * W - pad * 2);
-  // рядки
+  // рядки: розумне розбиття; примусові переноси (Enter у тексті) ділять текст на окремі абзаци
   const lines = [];
-  let line = [], lw = 0;
-  for (const i of idx) {
-    const w = ctx.measureText(disp(i)).width;
-    const add = line.length ? space + w : w;
-    if (line.length && (lw + add > maxW || breaks.has(i))) { lines.push({ words: line, w: lw }); line = []; lw = 0; }
-    line.push({ i, w }); lw += line.length > 1 ? space + w : w;
+  {
+    let seg = [];
+    const flush = () => {
+      if (!seg.length) return;
+      const ws = seg.map(i => disp(i)), wd = ws.map(x => ctx.measureText(x).width);
+      for (const ln of breakLines(ws, wd, space, maxW)) { const items = ln.map(j => ({ i: seg[j], w: wd[j] })); lines.push({ words: items, w: items.reduce((a, x, q) => a + x.w + (q ? space : 0), 0) }); }
+      seg = [];
+    };
+    for (const i of idx) { if (breaks.has(i)) flush(); seg.push(i); }
+    flush();
   }
-  if (line.length) lines.push({ words: line, w: lw });
-  const lh = size * 1.24;
+  const lh = size * (st.lineH || 1.24);
   const textH = lines.length * lh;
   const blockH = textH + pad * (box ? 0.6 : 2);
   const maxLine = Math.max(...lines.map(l => l.w));
   // положення: верхня частина кадру — від верху, нижня — від низу, середина — по центру
   const anchor = Math.max(0, Math.min(1, (st.y - 0.38) / 0.24)); // 0 — від верху, 1 — від низу, плавно між ними
   let top = st.y * H - blockH * anchor;
-  top = Math.max(H * 0.01, Math.min(H * 0.99 - blockH, top));
+  // безпечна зона соцмереж: у вертикальному відео низ займають підписи й кнопки, верх — рядок пошуку
+  const portrait = H / W > 1.5;
+  const lo = st.safe ? H * (portrait ? 0.12 : 0.06) : H * 0.01, hi = st.safe ? H * (portrait ? 0.78 : 0.94) : H * 0.99;
+  top = Math.max(lo, Math.min(hi - blockH, top));
   const cx = W / 2, cy = top + blockH / 2;
   if (track) capBox.id = c.id, capBox.x = (cx - maxLine / 2 - pad) / W, capBox.w = (maxLine + pad * 2) / W, capBox.y = top / H, capBox.h = blockH / H;
 
@@ -267,20 +335,42 @@ export function drawCaption(ctx, c, W, H, k, st, t, alphaMul = 1, track = true) 
       rr(ctx, x - pad, y - pad * 0.15, L.w + pad * 2, lh + pad * 0.3, size * 0.22);
       ctx.fill();
     }
-    for (const w of L.words) { pos.push({ i: w.i, x, y: y + size * 0.96 }); x += w.w + space; }
+    for (const w of L.words) { pos.push({ i: w.i, x, y: y + size * 0.96, w: w.w }); x += w.w + space; }
   });
   const visible = p => !(anim === 'words' && p.i > cur);
+  const hiOn = p => (anim === 'karaoke' || anim === 'chunk') && p.i === cur;
+  const mode = st.hiMode || 'color';
+  // плашка або підкреслення під словом, що звучить, малюються до тексту
+  for (const p of pos) {
+    if (!visible(p) || !hiOn(p)) continue;
+    if (mode === 'pill') { ctx.fillStyle = st.hi; rr(ctx, p.x - size * 0.12, p.y - size * 0.84, p.w + size * 0.24, size * 1.12, size * 0.24); ctx.fill(); }
+    else if (mode === 'underline') { ctx.fillStyle = st.hi; rr(ctx, p.x, p.y + size * 0.1, p.w, Math.max(2, size * 0.09), size * 0.045); ctx.fill(); }
+  }
+  const onPill = (() => { const m = /^#?([0-9a-f]{6})$/i.exec(st.hi || ''); if (!m) return '#ffffff'; const n = parseInt(m[1], 16); return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) > 150 ? '#111111' : '#ffffff'; })();
+  const drawWord = (p, dx = 0, dy = 0, stroke = false) => {
+    const sc = mode === 'scale' && hiOn(p) ? 1.16 : 1;
+    if (sc === 1) { stroke ? ctx.strokeText(disp(p.i), p.x + dx, p.y + dy) : ctx.fillText(disp(p.i), p.x + dx, p.y + dy); return; }
+    ctx.save(); ctx.translate(p.x + p.w / 2 + dx, p.y + dy - size * 0.3); ctx.scale(sc, sc); ctx.translate(-p.w / 2, size * 0.3);
+    stroke ? ctx.strokeText(disp(p.i), 0, 0) : ctx.fillText(disp(p.i), 0, 0); ctx.restore();
+  };
   if (st.bg === 'outline') {
     ctx.lineJoin = 'round'; ctx.miterLimit = 2;
-    ctx.lineWidth = size * 0.2; ctx.strokeStyle = 'rgba(0,0,0,.92)';
-    for (const p of pos) if (visible(p)) ctx.strokeText(disp(p.i), p.x, p.y);
+    ctx.lineWidth = size * (st.strokeW ?? 0.2); ctx.strokeStyle = st.strokeColor || '#000000';
+    for (const p of pos) if (visible(p)) drawWord(p, 0, 0, true);
   }
-  if (st.bg === 'shadow') { ctx.shadowColor = 'rgba(0,0,0,.85)'; ctx.shadowBlur = size * 0.28; ctx.shadowOffsetY = size * 0.05; }
+  if (st.bg === 'depth') { // жорстка тінь-об’єм: кілька зсунутих копій
+    ctx.fillStyle = st.shadowColor || '#000000';
+    const d = size * 0.09 * Math.max(0.4, (st.shadow ?? 0.28) / 0.28);
+    for (const p of pos) if (visible(p)) for (let q = 1; q <= 4; q++) drawWord(p, d * q / 4, d * q / 4 * 1.0);
+  }
+  if (st.bg === 'shadow') { ctx.shadowColor = rgba(st.shadowColor || '#000000', 0.85); ctx.shadowBlur = size * (st.shadow ?? 0.28); ctx.shadowOffsetY = size * 0.05; }
+  if (st.bg === 'glow') { ctx.shadowColor = st.shadowColor || '#4F6BF4'; ctx.shadowBlur = size * (st.shadow ?? 0.6) * 0.9; ctx.shadowOffsetY = 0; }
   for (const p of pos) {
     if (!visible(p)) continue;
-    const hi = (anim === 'karaoke' || anim === 'chunk') && p.i === cur;
-    ctx.fillStyle = hi ? st.hi : st.color;
-    ctx.fillText(disp(p.i), p.x, p.y);
+    const hot = hiOn(p);
+    ctx.fillStyle = hot ? (mode === 'pill' ? onPill : mode === 'underline' ? st.color : st.hi) : st.color;
+    drawWord(p);
+    if (st.bg === 'glow') drawWord(p); // двічі: сяйво щільніше
   }
   ctx.restore();
 }
